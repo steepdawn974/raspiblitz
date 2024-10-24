@@ -33,6 +33,7 @@ if [ ${#lndk} -eq 0 ]; then lndk="off"; fi
 if [ ${#labelbase} -eq 0 ]; then labelbase="off"; fi
 if [ ${#publicpool} -eq 0 ]; then publicpool="off"; fi
 if [ ${#albyhub} -eq 0 ]; then albyhub="off"; fi
+if [ ${#holesail} -eq 0 ]; then holesail="off"; fi
 if [ "${albyhub}" == "on" ] && [ $(sudo ls /etc/systemd/system/albyhub.service 2>/dev/null | grep -c 'albyhub.service') -lt 1 ]; then albyhub="off"; fi
 
 # show select dialog
@@ -80,6 +81,12 @@ if [ "${lightning}" == "cl" ] || [ "${cl}" == "on" ]; then
 fi
 
 OPTIONS+=(fn 'FinTS/HBCI Interface (experimental)' ${fints})
+
+# Lightning Tools
+OPTIONS+=(t 'Tor (external reachability)' ${runBehindTor})
+OPTIONS+=(l 'LNbits Lightning Wallet' ${LNBits})
+OPTIONS+=(g 'LightningTipBot' ${lightningtipbot})
+OPTIONS+=(ho 'Holesail Manager' ${holesail})
 
 CHOICES=$(dialog --title ' Additional Mainnet Services ' \
           --checklist ' use spacebar to activate/de-activate ' \
@@ -651,6 +658,28 @@ if [ "${albyhub}" != "${choice}" ]; then
   fi
 else
   echo "AlbyHub setting unchanged."
+fi
+
+# Holesail process choice
+choice="off"; check=$(echo "${CHOICES}" | grep -c "ho")
+if [ ${check} -eq 1 ]; then choice="on"; fi
+if [ "${holesail}" != "${choice}" ]; then
+  echo "Holesail Setting changed .."
+  anychange=1
+  sudo /home/admin/config.scripts/bonus.holesail-manager.sh ${choice}
+  errorOnInstall=$?
+  if [ "${choice}" =  "on" ]; then
+    if [ ${errorOnInstall} -eq 0 ]; then
+      holesail="on"
+      whiptail --title 'SUCCESS' --msgbox "Holesail was installed" 9 65
+    else
+      holesail="off"
+      whiptail --title 'FAIL' --msgbox "Holesail installation is cancelled\nTry again from the menu or install from the terminal with:\nsudo /home/admin/config.scripts/bonus.holesail-manager.sh on" 9 65
+    fi
+  else
+    holesail="off"
+    whiptail --title 'SUCCESS' --msgbox "Holesail was uninstalled" 9 65
+  fi
 fi
 
 # fints process choice  

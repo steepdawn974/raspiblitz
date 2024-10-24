@@ -183,6 +183,9 @@ fi
 if [ "${albyhub}" == "on" ]; then
   OPTIONS+=(ALBYHUB "AlbyHub")
 fi
+if [ "${holesail}" == "on" ]; then
+  OPTIONS+=(HOLESAIL "Holesail Manager port forwarding")
+fi
 
 # dont offer to switch to "testnet view for now" - so no wswitch back to mainnet needed
 #if [ ${chain} != "main" ]; then
@@ -321,6 +324,9 @@ case $CHOICE in
             ;;
         THUB)
             sudo /home/admin/config.scripts/bonus.thunderhub.sh menu
+            ;;
+        HOLESAIL)
+            sudo /home/admin/config.scripts/bonus.holesail-manager.sh menu
             ;;
         ZEROTIER)
             sudo /home/admin/config.scripts/internet.zerotier.sh menu
