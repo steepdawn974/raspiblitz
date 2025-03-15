@@ -43,14 +43,13 @@ function installDependencies() {
   sudo apt-get install -y libpq-dev
   # for clnrest - https://docs.corelightning.org/docs/installation#clnrest
   sudo apt-get install -y python3-json5 python3-flask python3-gunicorn
-  # python deps
+
+  # python deps for wss-proxy
   # upgrade pip
   sudo pip3 config set global.break-system-packages true
   sudo pip3 install --upgrade pip
-  # for clnrest
+  # for wss-proxy - https://docs.corelightning.org/docs/installation#wss-proxy
   sudo -u bitcoin pip3 config set global.break-system-packages true
-  sudo -u bitcoin pip3 install --user flask-cors flask-restx pyln-client flask-socketio gevent gevent-websocket
-  # for wss proxy - https://docs.corelightning.org/docs/installation#wss-proxy
   sudo -u bitcoin pip3 install --user pyln-client websockets
   # poetry
   sudo pip3 install poetry
@@ -60,6 +59,19 @@ function installDependencies() {
   export PATH="home/bitcoin/.local/bin:$PATH"
   cd /home/bitcoin/lightning || exit 1
   sudo -u bitcoin poetry install
+
+  # rust deps for cln-grpc and clnrest plugins
+  if ! sudo -u bitcoin cargo --version; then
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sudo sh -s -- --default-toolchain=stable -y
+    # move Rust binaries to be available system-wide
+    sudo mv $HOME/.cargo/bin/* /usr/local/bin/
+  fi
+  sudo apt-get install -y protobuf-compiler
+
+  # remove old clnrest dir if exists
+  if [ -d /usr/local/libexec/c-lightning/plugins/clnrest ]; then
+    sudo rm -rf /usr/local/libexec/c-lightning/plugins/clnrest
+  fi
 }
 
 function buildAndInstallCLbinaries() {
