@@ -1,9 +1,10 @@
+```mermaid
 flowchart TD
   %% ========== START ==========
   A[build_sdcard.sh]:::start
 
   %% ========== BOOT & BACKGROUND ==========
-  subgraph BOOT_AND_BG[Boot & Background Services]
+  subgraph BOOT_AND_BG [Boot & Background Services]
     B[_bootstrap.sh]
     C[_background.scan.sh]
     D[_background.sh]
@@ -11,7 +12,7 @@ flowchart TD
   end
 
   %% ========== SSH UI ==========
-  subgraph SSH_UI[SSH User Interface]
+  subgraph SSH_UI [SSH User Interface]
     F[home.admin/00raspiblitz.sh]
     G[home.admin/00mainMenu.sh]
     G1[home.admin/00settingsMenuBasics.sh]
@@ -32,7 +33,7 @@ flowchart TD
   end
 
   %% ========== SETUP CONTROLLERS ==========
-  subgraph SETUP_UI[Setup Controllers (interactive)]
+  subgraph SETUP_UI [Setup Controllers]
     S1[home.admin/setup.scripts/controlSetupDialog.sh]
     S2[home.admin/setup.scripts/controlSetupExtendedDialog.sh]
     S3[home.admin/setup.scripts/controlFinalDialog.sh]
@@ -40,7 +41,7 @@ flowchart TD
   end
 
   %% ========== PROVISIONING ==========
-  subgraph PROVISIONING[Provisioning Phases]
+  subgraph PROVISIONING [Provisioning Phases]
     P0[home.admin/_provision.setup.sh]
     P1[home.admin/_provision.update.sh]
     P2[home.admin/_provision.migration.sh]
@@ -49,7 +50,7 @@ flowchart TD
   end
 
   %% ========== CONFIG SCRIPTS (subset) ==========
-  subgraph CONFIG_SCRIPTS[Config Scripts (subset of many)]
+  subgraph CONFIG_SCRIPTS [Config Scripts]
     CS0[home.admin/config.scripts/blitz.conf.sh]
     CS1[home.admin/config.scripts/blitz.data.sh]
     CS2[home.admin/config.scripts/blitz.ssh.sh]
@@ -81,7 +82,7 @@ flowchart TD
   end
 
   %% ========== BONUS / APP MENUS (subset) ==========
-  subgraph BONUS_APPS[Bonus/App Menus (subset)]
+  subgraph BONUS_APPS [Bonus and App Menus]
     BA1[home.admin/config.scripts/bonus.electrs.sh]
     BA2[home.admin/config.scripts/bonus.fulcrum.sh]
     BA3[home.admin/config.scripts/bonus.btc-rpc-explorer.sh]
@@ -294,3 +295,4 @@ flowchart TD
   click BA17 "home.admin/config.scripts/bonus.labelbase.sh" "bonus.labelbase.sh"
   click BA18 "home.admin/config.scripts/bonus.telegraf.sh" "bonus.telegraf.sh"
   click BA19 "home.admin/config.scripts/bonus.albyhub.sh" "bonus.albyhub.sh"
+```
