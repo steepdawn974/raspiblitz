@@ -1,0 +1,285 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RaspiBlitz Script Dependency Graph</title>
+  <link rel="stylesheet" href="https://unpkg.com/vis-network/styles/vis-network.min.css" />
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif; }
+    #app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+    #toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 8px 10px; border-bottom: 1px solid #e0e0e0; background: #fff;
+      position: sticky; top: 0; z-index: 10;
+    }
+    #toolbar input[type="text"] { width: 260px; padding: 6px 8px; }
+    #toolbar button, #toolbar select { padding: 6px 10px; }
+    #network { width: 100%; height: 100%; overflow: hidden; }
+    .badge { font-size: 12px; color: #555; margin-left: 6px; }
+  </style>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <div id="toolbar">
+      <strong>RaspiBlitz Script DAG</strong>
+      <span class="badge" id="counts">(loading…)</span>
+      <button id="btnFit">Fit</button>
+      <button id="btnTB">Layout TB</button>
+      <button id="btnLR">Layout LR</button>
+      <button id="btnForce">Force Layout</button>
+      <button id="btnHier">Hierarchical</button>
+      <button id="btnStabilize">Stabilize</button>
+      <label>Filter:
+        <select id="filter">
+          <option value="">All</option>
+          <option value="BOOT">Boot & Background</option>
+          <option value="SSH">SSH UI</option>
+          <option value="SETUP">Setup Controllers</option>
+          <option value="PROV">Provisioning</option>
+          <option value="CONF">Config Scripts</option>
+          <option value="BONUS">Bonus Apps</option>
+        </select>
+      </label>
+      <input id="search" type="text" placeholder="Search node (substring)…" />
+      <button id="btnClear">Clear Filters</button>
+      <button id="btnReset">Reset</button>
+      <small class="badge">Tip: double-click to expand, Shift+double-click to collapse subtree, Ctrl+click to copy path</small>
+    </div>
+    <div id="network"></div>
+  </div>
+  <script>
+    const container = document.getElementById('network');
+    const nodesDS = new vis.DataSet([]);
+    const edgesDS = new vis.DataSet([]);
+    let network = null;
+
+    const colorByGroup = {
+      BOOT: { background: '#fff8e1', border: '#ffb300' },
+      SSH: { background: '#e8f5e9', border: '#43a047' },
+      SETUP: { background: '#f3e5f5', border: '#8e24aa' },
+      PROV: { background: '#e0f7fa', border: '#00838f' },
+      CONF: { background: '#fce4ec', border: '#d81b60' },
+      BONUS: { background: '#ede7f6', border: '#5e35b1' }
+    };
+
+    // Default: sample-style (non-hierarchical, physics on, scaling)
+    let options = {
+      layout: { improvedLayout: true, hierarchical: { enabled: false } },
+      physics: { enabled: true, barnesHut: { gravitationalConstant: -2000, centralGravity: 0.3, springLength: 120, springConstant: 0.03, damping: 0.28 } },
+      interaction: { hover: true, multiselect: true, zoomView: true, dragNodes: true, dragView: true },
+      nodes: {
+        shape: 'dot',
+        scaling: {
+          min: 6,
+          max: 36,
+          label: { enabled: true, min: 8, max: 20, drawThreshold: 8 },
+        },
+        font: { size: 12 },
+        shadow: { enabled: false }
+      },
+      edges: {
+        arrows: 'to',
+        smooth: { type: 'dynamic' },
+        color: { color: '#90caf9', highlight: '#42a5f5', hover: '#64b5f6' },
+        scaling: { min: 1, max: 8 },
+        width: 1
+      }
+    };
+
+    // Graph structures
+    const allNodes = new Map(); // id -> node data from graph.json
+    const children = new Map(); // id -> Set(childId)
+    const parents = new Map();  // id -> Set(parentId)
+    const level = new Map();    // id -> BFS level from roots
+    const edgeValues = new Map(); // key `${s}__${t}` -> value
+    let currentFilter = '';
+
+    function updateCounts() {
+      document.getElementById('counts').textContent = `(${nodesDS.length} nodes)`;
+    }
+
+    function addNodeIfVisible(nid) {
+      const n = allNodes.get(nid);
+      if (!n) return;
+      if (currentFilter && n.group !== currentFilter) return;
+      const colors = colorByGroup[n.group] || { background: '#e3f2fd', border: '#1976d2' };
+      if (!nodesDS.get(nid)) {
+        nodesDS.add({ id: nid, label: n.label, title: n.href,
+          level: level.get(nid) ?? undefined,
+          value: n.value || 1,
+          color: { background: colors.background, border: colors.border } });
+      }
+    }
+
+    function addEdgeIfVisible(src, dst) {
+      const s = allNodes.get(src), t = allNodes.get(dst);
+      if (!s || !t) return;
+      if (currentFilter && (s.group !== currentFilter || t.group !== currentFilter)) return;
+      const id = `${src}__${dst}`;
+      const val = edgeValues.get(id) || 1;
+      if (!edgesDS.get(id)) edgesDS.add({ id, from: src, to: dst, value: val });
+    }
+
+    function computeRoots() {
+      const indeg = new Map();
+      allNodes.forEach((_, id) => indeg.set(id, 0));
+      children.forEach((chs) => chs.forEach(ch => indeg.set(ch, (indeg.get(ch) || 0) + 1)));
+      const roots = Array.from(indeg.entries()).filter(([,d]) => d === 0).map(([id]) => id);
+      // Prefer build_sdcard.sh as root if present
+      const mainRoot = allNodes.has('build_sdcard.sh') ? ['build_sdcard.sh'] : [];
+      return mainRoot.length ? mainRoot : roots;
+    }
+
+    function bfsLevels() {
+      level.clear();
+      const q = [];
+      for (const r of computeRoots()) { level.set(r, 0); q.push(r); }
+      while (q.length) {
+        const u = q.shift();
+        const lu = level.get(u) || 0;
+        const chs = children.get(u) || new Set();
+        for (const v of chs) {
+          if (!level.has(v)) { level.set(v, lu + 1); q.push(v); }
+        }
+      }
+    }
+
+    function showInitial(depthIgnored=1) {
+      nodesDS.clear(); edgesDS.clear();
+      // Seed with a few key nodes to avoid huge initial layout
+      const seeds = [
+        'build_sdcard.sh',
+        'home.admin/_bootstrap.sh',
+        'home.admin/00raspiblitz.sh'
+      ].filter(id => allNodes.has(id));
+      // If none found (unlikely), fallback to the first 3 roots
+      let seedList = seeds;
+      if (seedList.length === 0) {
+        const r = computeRoots();
+        seedList = r.slice(0, 3);
+      }
+      seedList.forEach(addNodeIfVisible);
+      // Do NOT add children by default; expand with double click
+      createOrRedraw();
+    }
+
+    function expandOneLevel(nid) {
+      const chs = Array.from(children.get(nid) || []);
+      chs.forEach(c => addNodeIfVisible(c));
+      chs.forEach(c => addEdgeIfVisible(nid, c));
+      createOrRedraw(false);
+    }
+
+    function collapseSubtree(nid) {
+      const toRemove = new Set();
+      function dfs(u) {
+        const chs = Array.from(children.get(u) || []);
+        for (const v of chs) {
+          if (nodesDS.get(v)) {
+            dfs(v);
+            toRemove.add(v);
+            const eid = `${u}__${v}`; if (edgesDS.get(eid)) edgesDS.remove(eid);
+          }
+        }
+      }
+      dfs(nid);
+      nodesDS.remove(Array.from(toRemove));
+      createOrRedraw(false);
+    }
+
+    function applyFilter(group) {
+      currentFilter = group || '';
+      showInitial(2);
+    }
+
+    function applySearch(term) {
+      // simple highlight by selecting nodes whose label contains term
+      if (!network) return;
+      const lc = (term || '').toLowerCase();
+      const toSelect = nodesDS.getIds().filter(id => (allNodes.get(id)?.label || '').toLowerCase().includes(lc));
+      network.selectNodes(toSelect);
+    }
+
+    function toast(msg){ try { console.log(msg); } catch(_){} }
+
+    function createOrRedraw(fit=true) {
+      if (!network) {
+        network = new vis.Network(container, { nodes: nodesDS, edges: edgesDS }, options);
+        // double-click: expand children; Shift+double-click: collapse subtree
+        network.on('doubleClick', params => {
+          if (!params || !params.nodes || !params.nodes.length) return;
+          const nid = params.nodes[0];
+          if (params.event.srcEvent.shiftKey) collapseSubtree(nid);
+          else expandOneLevel(nid);
+        });
+        // Ctrl+click: copy repo-relative path to clipboard
+        network.on('click', params => {
+          if (params.nodes && params.nodes.length && params.event.srcEvent.ctrlKey) {
+            const nid = params.nodes[0];
+            const href = allNodes.get(nid)?.href;
+            if (!href) return;            
+            if (navigator.clipboard && window.isSecureContext) {
+              navigator.clipboard.writeText(href).then(() => toast('Copied path to clipboard')); 
+            } else {
+              // fallback copy
+              const ta = document.createElement('textarea');
+              ta.value = href; document.body.appendChild(ta); ta.select();
+              try { document.execCommand('copy'); toast('Copied path to clipboard'); } catch(_) {}
+              document.body.removeChild(ta);
+            }
+          }
+        });
+      } else {
+        network.setData({ nodes: nodesDS, edges: edgesDS });
+      }
+      if (fit) network.fit({ animation: { duration: 300 } });
+      updateCounts();
+    }
+
+    // Controls
+    document.getElementById('btnFit').onclick = () => network && network.fit({ animation: { duration: 300 } });
+    document.getElementById('btnTB').onclick = () => { options.layout = { improvedLayout: false, hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', levelSeparation: 120, nodeSpacing: 180 } }; options.physics = { enabled: false }; createOrRedraw(); };
+    document.getElementById('btnLR').onclick = () => { options.layout = { improvedLayout: false, hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', levelSeparation: 120, nodeSpacing: 180 } }; options.physics = { enabled: false }; createOrRedraw(); };
+    document.getElementById('btnForce').onclick = () => { options.layout = { improvedLayout: true, hierarchical: { enabled: false } }; options.physics = { enabled: true, barnesHut: { gravitationalConstant: -3000, centralGravity: 0.2, springLength: 120, springConstant: 0.04, damping: 0.25 } }; createOrRedraw(); network.stabilize(300); };
+    document.getElementById('btnHier').onclick = () => { options.layout = { improvedLayout: false, hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', levelSeparation: 120, nodeSpacing: 180 } }; options.physics = { enabled: false }; createOrRedraw(); };
+    document.getElementById('btnStabilize').onclick = () => { if (network) network.stabilize(300); };
+    document.getElementById('filter').onchange = (e) => applyFilter(e.target.value);
+    document.getElementById('search').oninput = (e) => applySearch(e.target.value);
+    document.getElementById('btnClear').onclick = () => { document.getElementById('filter').value=''; document.getElementById('search').value=''; applyFilter(''); };
+    document.getElementById('btnReset').onclick = () => { document.getElementById('filter').value=''; document.getElementById('search').value=''; currentFilter=''; showInitial(2); };
+
+    // (Removed Base URL persistence)
+
+    // Load graph.json and initialize
+    fetch('graph.json')
+      .then(r => r.json())
+      .then(g => {
+        // Build maps
+        g.nodes.forEach(n => { allNodes.set(n.id, { ...n }); });
+        g.edges.forEach(e => {
+          if (!children.has(e.source)) children.set(e.source, new Set());
+          children.get(e.source).add(e.target);
+          if (!parents.has(e.target)) parents.set(e.target, new Set());
+          parents.get(e.target).add(e.source);
+          edgeValues.set(`${e.source}__${e.target}`, Math.max(1, e.value || 1));
+        });
+        // Compute degree-based sizing (in+out degree)
+        const deg = new Map();
+        allNodes.forEach((_, id) => deg.set(id, 0));
+        children.forEach((chs, s) => {
+          deg.set(s, (deg.get(s) || 0) + chs.size);
+          chs.forEach(t => deg.set(t, (deg.get(t) || 0) + 1));
+        });
+        allNodes.forEach((n, id) => { n.value = Math.max(1, deg.get(id) || 1); });
+        showInitial(2); // default collapsed to 2 levels
+      })
+      .catch(err => {
+        console.error('Failed to load graph.json', err);
+        alert('Failed to load graph.json. Run the generator script first.');
+      });
+  </script>
+</body>
+</html>
