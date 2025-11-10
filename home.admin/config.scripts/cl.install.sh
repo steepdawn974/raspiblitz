@@ -41,6 +41,8 @@ function installDependencies() {
     net-tools zlib1g-dev libsodium-dev gettext
   # additional requirements
   sudo apt-get install -y libpq-dev
+  # native build deps for Python packages like coincurve (PEP517)
+  sudo apt-get install -y python3-dev pkg-config libffi-dev libgmp-dev libssl-dev
   # poetry
   sudo pip3 install poetry
   if ! grep -Eq '^PATH="$HOME/.local/bin:$PATH"' /home/bitcoin/.profile; then
