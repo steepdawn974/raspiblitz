@@ -42,7 +42,8 @@ function installDependencies() {
   # additional requirements
   sudo apt-get install -y libpq-dev
   # native build deps for Python packages like coincurve (PEP517)
-  sudo apt-get install -y python3-dev pkg-config libffi-dev libgmp-dev libssl-dev
+  sudo apt-get install -y python3-dev pkg-config libffi-dev libgmp-dev \
+     libssl-dev python3-cffi python3-tqdm 
   # poetry
   sudo pip3 install poetry
   if ! grep -Eq '^PATH="$HOME/.local/bin:$PATH"' /home/bitcoin/.profile; then
