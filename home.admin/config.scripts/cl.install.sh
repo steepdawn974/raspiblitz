@@ -41,16 +41,6 @@ function installDependencies() {
     net-tools zlib1g-dev libsodium-dev gettext
   # additional requirements
   sudo apt-get install -y libpq-dev
-  # for clnrest - https://docs.corelightning.org/docs/installation#clnrest
-  sudo apt-get install -y python3-json5 python3-flask python3-gunicorn python3-grpc-tools
-
-  # python deps for wss-proxy
-  # upgrade pip
-  sudo pip3 config set global.break-system-packages true
-  sudo pip3 install --upgrade pip
-  # for wss-proxy - https://docs.corelightning.org/docs/installation#wss-proxy
-  sudo -u bitcoin pip3 config set global.break-system-packages true
-  sudo -u bitcoin pip3 install --user pyln-client websockets grpcio-tools
   # poetry
   sudo pip3 install poetry
   if ! grep -Eq '^PATH="$HOME/.local/bin:$PATH"' /home/bitcoin/.profile; then
@@ -93,13 +83,19 @@ function installDependencies() {
 
 function buildAndInstallCLbinaries() {
 
-  sudo -u bitcoin python3 -m pip install --user --upgrade grpcio-tools protobuf
+  # grpc tools not needed anymore, if we have protobuf-compiler
 
   # patch makefile
-  sudo -u bitcoin sed -i -E 's/ --experimental_allow_proto3_optional(=true)?//g' Makefile
+  if [ -f Makefile ]; then
+    if sudo -u bitcoin grep -q " --experimental_allow_proto3_optional" Makefile; then
+      sudo -u bitcoin sed -i -E 's/ --experimental_allow_proto3_optional(=true)?//g' Makefile
+    fi
+  fi
 
   # delete old file
-  sudo -u bitcoin rm -f contrib/pyln-grpc-proto/pyln/grpc/*_pb2.py contrib/pyln-grpc-proto/pyln/grpc/*_pb2_grpc.py
+  if [ -d contrib/pyln-grpc-proto/pyln/grpc ]; then
+    sudo -u bitcoin rm -f contrib/pyln-grpc-proto/pyln/grpc/*_pb2.py contrib/pyln-grpc-proto/pyln/grpc/*_pb2_grpc.py 2>/dev/null || true
+  fi
 
   echo
   echo "########## configure"
