@@ -56,7 +56,7 @@ function installDependencies() {
   if ! grep -Eq '^PATH="$HOME/.local/bin:$PATH"' /home/bitcoin/.profile; then
     echo 'PATH="$HOME/.local/bin:$PATH"' | sudo tee -a /home/bitcoin/.profile
   fi
-  export PATH="home/bitcoin/.local/bin:$PATH"
+  export PATH="/home/bitcoin/.local/bin:$PATH"
   cd /home/bitcoin/lightning || exit 1
   sudo -u bitcoin poetry install
 
