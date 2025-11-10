@@ -108,25 +108,6 @@ function buildAndInstallCLbinaries() {
   sudo make RUSTUP_HOME=/opt/rust CARGO_HOME=/opt/rust install || exit 1
 }
 
-function runTests() {
-  # for the tests - install Core Lightning test dependencies matching pyproject.toml versions
-  # based on https://github.com/ElementsProject/lightning/blob/master/contrib/pyln-testing/pyproject.toml
-  echo "- install Core Lightning test dependencies"
-  sudo -u bitcoin pip3 install --user --upgrade \
-    "pytest>=7" \
-    "ephemeral-port-reserve>=1.1.4" \
-    "psycopg2-binary>=2.9" \
-    "python-bitcoinlib>=0.11.0" \
-    "jsonschema>=4.4.0" \
-    "Flask>=2" \
-    "cheroot>=8,<=10" \
-    "psutil>=5.9" \
-    "requests>=2.31.0" \
-    python-socketio websocket-client flaky
-  echo "- run tests"
-  echo
-  sudo -u bitcoin RUSTUP_HOME=/opt/rust CARGO_HOME=/opt/rust make check || exit 1
-}
 
 echo "# Running: 'cl.install.sh $*'"
 
