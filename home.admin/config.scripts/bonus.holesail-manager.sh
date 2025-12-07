@@ -140,10 +140,20 @@ function getConnector() {
 function install() {
   echo "# Installing Holesail..."
 
-  # Check if Node.js and npm are installed
+  # Check if Node.js and npm are installed, install if needed
   if ! command -v node > /dev/null || ! command -v npm > /dev/null; then
-    echo "# Error: Node.js and npm are required but not installed"
-    return 1
+    echo "# Node.js and npm are required but not installed"
+    echo "# Installing Node.js..."
+    /home/admin/config.scripts/bonus.nodejs.sh on
+    if [ $? -ne 0 ]; then
+      echo "# Error: Failed to install Node.js"
+      return 1
+    fi
+    # Verify installation
+    if ! command -v node > /dev/null || ! command -v npm > /dev/null; then
+      echo "# Error: Node.js installation verification failed"
+      return 1
+    fi
   fi
 
   # Check Node.js version
