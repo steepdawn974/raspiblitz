@@ -83,6 +83,10 @@ if [ "${lightning}" == "cl" ] || [ "${cl}" == "on" ]; then
   OPTIONS+=(ZEUS_CLNREST "Zeus to CLNrest (Android or iOS)")
 	OPTIONS+=(ZEUS_CLREST "Zeus to C-Lightning-REST (Android or iOS)[DEPRECATED]")
 	OPTIONS+=(FULLYNODED_CL "Fully Noded to CL REST (iOS+Tor)")
+  # Check if CLNrest Holesail tunnel is enabled
+  if [ -f "/etc/systemd/system/holesail-clnrest.service" ]; then
+    OPTIONS+=(CLNREST_HOLESAIL "CLNrest via Holesail (P2P tunnel)")
+  fi
 fi
 
 # Additional Options with Tor
@@ -272,4 +276,9 @@ ZEUS_CLREST)
   	  /home/admin/config.scripts/cl.rest.sh connect
   	  exit 0;
 	;;
+CLNREST_HOLESAIL)
+    # Show CLNrest Holesail connection info
+    /home/admin/config.scripts/bonus.holesail-manager.sh connect clnrest
+    exit 0;
+  ;;
 esac

@@ -1,24 +1,140 @@
 #!/bin/bash
 
+# Holesail Manager for RaspiBlitz
+# Holesail is a peer-to-peer tunneling solution that allows you to expose local services
+# to the internet without port forwarding, static IPs, or complex configurations.
+# See: https://docs.holesail.io/
+
 # command info
 if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "-help" ]; then
   echo "Config script to manage Holesail port forwarding. See: https://docs.holesail.io/"
-  echo "bonus.holesail-manager.sh [on|off]"
-  echo "bonus.holesail-manager.sh menu"
-  echo "bonus.holesail-manager.sh list"
-  echo "bonus.holesail-manager.sh add [clrest|lndrest|electrs|fulcrum]"
-  echo "bonus.holesail-manager.sh remove [clrest|lndrest|electrs|fulcrum]"
+  echo "bonus.holesail-manager.sh [on|off]              # Install/uninstall holesail"
+  echo "bonus.holesail-manager.sh menu                  # Interactive menu"
+  echo "bonus.holesail-manager.sh status                # Show status of all holesail services"
+  echo "bonus.holesail-manager.sh add <service>         # Enable holesail for service"
+  echo "bonus.holesail-manager.sh remove <service>      # Disable holesail for service"
+  echo "bonus.holesail-manager.sh connect <service>     # Show connection info for service"
+  echo ""
+  echo "Supported services: clnrest, lndrest, electrs, fulcrum"
   exit 1
 fi
 
 # check and load raspiblitz config
-
-RASPIBLITZ_CONF=/mnt/hdd/raspiblitz.conf
+RASPIBLITZ_CONF=/mnt/hdd/app-data/raspiblitz.conf
 HOLESAIL_MIN_NODE_VERSION="20"
+HOLESAIL_DATA_DIR="/mnt/hdd/app-data/holesail"
 
-source $RASPIBLITZ_CONF
+if [ -f "${RASPIBLITZ_CONF}" ]; then
+  source "${RASPIBLITZ_CONF}"
+fi
 
+# also source raspiblitz.info for state info
+if [ -f /home/admin/raspiblitz.info ]; then
+  source /home/admin/raspiblitz.info
+fi
 
+###############################################
+# HELPER FUNCTIONS
+###############################################
+
+# Get the port for a given service
+function getServicePort() {
+  local SERVICE=$1
+  local PORT=""
+  
+  case $SERVICE in
+    clnrest)
+      # Get CLNrest port from config (default 7378 for mainnet)
+      source <(/home/admin/config.scripts/network.aliases.sh getvars cl mainnet 2>/dev/null)
+      if [ -n "${CLCONF}" ] && [ -f "${CLCONF}" ]; then
+        PORT=$(grep -oP '^clnrest-port=\K[0-9]+' "${CLCONF}" 2>/dev/null)
+      fi
+      # Default port if not found
+      [ -z "${PORT}" ] && PORT="7378"
+      ;;
+    lndrest)
+      # LND REST port (default 8080 for mainnet)
+      PORT="8080"
+      ;;
+    electrs)
+      # Electrs SSL port
+      PORT="50002"
+      ;;
+    fulcrum)
+      # Fulcrum SSL port
+      PORT="50022"
+      ;;
+    *)
+      echo ""
+      return 1
+      ;;
+  esac
+  
+  echo "${PORT}"
+}
+
+# Get the systemd dependency for a service
+function getServiceDependency() {
+  local SERVICE=$1
+  
+  case $SERVICE in
+    clnrest)
+      echo "lightningd.service"
+      ;;
+    lndrest)
+      echo "lnd.service"
+      ;;
+    electrs)
+      echo "electrs.service"
+      ;;
+    fulcrum)
+      echo "fulcrum.service"
+      ;;
+    *)
+      echo "bitcoind.service"
+      ;;
+  esac
+}
+
+# Check if a service is available on the system
+function isServiceAvailable() {
+  local SERVICE=$1
+  
+  case $SERVICE in
+    clnrest)
+      [ "${cl}" == "on" ] && return 0
+      ;;
+    lndrest)
+      [ "${lnd}" == "on" ] && return 0
+      ;;
+    electrs)
+      [ "${ElectRS}" == "on" ] && return 0
+      ;;
+    fulcrum)
+      [ "${fulcrum}" == "on" ] && return 0
+      ;;
+  esac
+  return 1
+}
+
+# Check if holesail is enabled for a service
+function isHolesailEnabled() {
+  local SERVICE=$1
+  [ -f "/etc/systemd/system/holesail-${SERVICE}.service" ] && return 0
+  return 1
+}
+
+# Get the connector string for a service
+function getConnector() {
+  local SERVICE=$1
+  local CONNECTOR_FILE="${HOLESAIL_DATA_DIR}/${SERVICE}.connector"
+  
+  if [ -f "${CONNECTOR_FILE}" ]; then
+    cat "${CONNECTOR_FILE}"
+  else
+    echo ""
+  fi
+}
 
 # Installation function
 function install() {
@@ -47,18 +163,20 @@ function install() {
   fi
 
   # Verify installation
-  _version=$(holesail --version | grep -E '^[0-9]+(\.[0-9]+)*$')
+  _version=$(holesail --version 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+)*$')
   if [ -z "${_version}" ]; then
     echo "# Error: Holesail installation verification failed"
     return 1
   fi
 
+  # Create data directory
+  sudo mkdir -p "${HOLESAIL_DATA_DIR}"
+  sudo chown admin:admin "${HOLESAIL_DATA_DIR}"
+
   # setting value in raspiblitz.conf
   /home/admin/config.scripts/blitz.conf.sh set holesail on
-  # TODO: do we also need to set _cache.sh here???
 
-
-  echo "# Holesail installation successful"
+  echo "# Holesail v${_version} installation successful"
   return 0
 }
 
@@ -66,109 +184,188 @@ function install() {
 function uninstall() {
   echo "# Uninstalling Holesail..."
 
+  # Stop and remove all holesail services first
+  for SERVICE in clnrest lndrest electrs fulcrum; do
+    if isHolesailEnabled "${SERVICE}"; then
+      echo "# Removing holesail-${SERVICE}..."
+      removeSystemdService "${SERVICE}"
+    fi
+  done
+
   # Check if Holesail is installed
   if ! command -v holesail > /dev/null; then
     echo "# Holesail is not installed"
-    return 0
+  else
+    # Uninstall Holesail globally
+    echo "# Removing Holesail via npm..."
+    sudo npm uninstall -g holesail
   fi
 
-  # Uninstall Holesail globally
-  echo "# Removing Holesail via npm..."
-  sudo npm uninstall -g holesail
-  if [ $? -ne 0 ]; then
-    echo "# Error: Failed to uninstall Holesail"
-    return 1
-  fi
+  # Remove data directory
+  sudo rm -rf "${HOLESAIL_DATA_DIR}"
 
   # setting value in raspiblitz.conf
   /home/admin/config.scripts/blitz.conf.sh delete holesail
-
-  # Verify uninstallation
-  if command -v holesail > /dev/null; then
-    echo "# Error: Holesail is still installed"
-    return 1
-  fi
 
   echo "# Holesail uninstallation successful"
   return 0
 }
 
+# Create systemd service for a holesail tunnel
 function createSystemdService() {
   local SERVICE=$1
-  case $SERVICE in
-    holesail-clrest)
-      source <(/home/admin/config.scripts/network.aliases.sh getvars cl mainnet)
-
-      # Set variables for CLnrest mainnet
-      PORT=$(grep -oP '^clnrest-port=\K[0-9]+' "${CLCONF}")
-      if [ -z "${PORT}" ]; then
-        echo "# Error: Could not find clnrest-port in ${CLCONF}"
-        exit 1
-      fi
-
-      CONNECTOR="clnrest@$(hostname)-$(uuidgen)"
-      DEPENDS_ON="lightningd.service"
-      ;;
-
-    holesail-lndrest)
-      PORT=8080 #TODO: look this up, instead of hardcoding
-      CONNECTOR="lndrest@$(hostname)-$(uuidgen)"
-      DEPENDS_ON="lnd.service"
-      ;;
-
-    holesail-electrs)
-      PORT=50002 #TODO: look this up, instead of hardcoding
-      CONNECTOR="electrs@$(hostname)-$(uuidgen)"
-      DEPENDS_ON="bitcoind.service"
-      ;;
-
-    holesail-fulcrum)
-      PORT=50022 #TODO: look this up, instead of hardcoding
-      CONNECTOR="fulcrum@$(hostname)-$(uuidgen)"
-      DEPENDS_ON="bitcoind.service"
-      ;;
-
-    *)
-      echo "# Error: Unknown service: $SERVICE"
-      return 1
-      ;;
-  esac
-
+  local PORT=$(getServicePort "${SERVICE}")
+  local DEPENDS_ON=$(getServiceDependency "${SERVICE}")
   
-  echo "# Create a systemd service for $SERVICE on port $PORT"
-  echo "\
-[Unit]
-Description=Holesail
-After=network.target $DEPENDS_ON
-StartLimitBurst=2
-StartLimitIntervalSec=20
+  if [ -z "${PORT}" ]; then
+    echo "# Error: Could not determine port for service: ${SERVICE}"
+    return 1
+  fi
+
+  # Generate unique connector string: service@hostname-uuid
+  local CONNECTOR="${SERVICE}@$(hostname)-$(uuidgen)"
+  local SERVICE_NAME="holesail-${SERVICE}"
+  local CONNECTOR_FILE="${HOLESAIL_DATA_DIR}/${SERVICE}.connector"
+  
+  echo "# Creating systemd service for ${SERVICE_NAME} on port ${PORT}"
+  echo "# Connector: ${CONNECTOR}"
+  
+  # Store connector string
+  sudo mkdir -p "${HOLESAIL_DATA_DIR}"
+  echo "${CONNECTOR}" | sudo tee "${CONNECTOR_FILE}" > /dev/null
+  sudo chown admin:admin "${CONNECTOR_FILE}"
+  
+  # Create systemd service file
+  echo "[Unit]
+Description=Holesail tunnel for ${SERVICE}
+After=network.target ${DEPENDS_ON}
+Wants=${DEPENDS_ON}
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Service]
-ExecStart=holesail --live $PORT --connector=$CONNECTOR
+ExecStart=/usr/bin/holesail --live ${PORT} --connector=${CONNECTOR}
 KillSignal=SIGINT
 User=admin
-RestartSec=5
+RestartSec=10
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
-" | sudo tee /etc/systemd/system/$SERVICE.service
+" | sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null
 
-  sudo systemctl enable $SERVICE
-  sudo systemctl start $SERVICE
-
+  sudo systemctl daemon-reload
+  sudo systemctl enable ${SERVICE_NAME}
+  sudo systemctl start ${SERVICE_NAME}
+  
+  # Wait a moment for service to start
+  sleep 2
+  
+  if sudo systemctl is-active --quiet ${SERVICE_NAME}; then
+    echo "# OK - ${SERVICE_NAME} is running"
+    echo "# Connector string: ${CONNECTOR}"
+    return 0
+  else
+    echo "# Warning: ${SERVICE_NAME} may not have started correctly"
+    echo "# Check with: sudo journalctl -u ${SERVICE_NAME}"
+    return 1
+  fi
 }
 
-
+# Remove systemd service
 function removeSystemdService() {
   local SERVICE=$1
-  echo "# Removing systemd service for $SERVICE..."
-  sudo systemctl disable $SERVICE
-  sudo rm /etc/systemd/system/$SERVICE.service
-  sudo systemctl daemon-reload
-  echo "# OK - systemd service removed"
+  local SERVICE_NAME="holesail-${SERVICE}"
+  local CONNECTOR_FILE="${HOLESAIL_DATA_DIR}/${SERVICE}.connector"
+  
+  echo "# Removing systemd service for ${SERVICE_NAME}..."
+  
+  if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
+    sudo systemctl stop ${SERVICE_NAME} 2>/dev/null
+    sudo systemctl disable ${SERVICE_NAME} 2>/dev/null
+    sudo rm /etc/systemd/system/${SERVICE_NAME}.service
+    sudo systemctl daemon-reload
+  fi
+  
+  # Remove connector file
+  sudo rm -f "${CONNECTOR_FILE}"
+  
+  echo "# OK - ${SERVICE_NAME} removed"
 }
 
+# Show connection info for a service
+function showConnectionInfo() {
+  local SERVICE=$1
+  local CONNECTOR=$(getConnector "${SERVICE}")
+  local PORT=$(getServicePort "${SERVICE}")
+  
+  if [ -z "${CONNECTOR}" ]; then
+    echo "# Error: Holesail is not enabled for ${SERVICE}"
+    return 1
+  fi
+  
+  clear
+  echo "=============================================="
+  echo "  HOLESAIL CONNECTION INFO: ${SERVICE}"
+  echo "=============================================="
+  echo ""
+  echo "Service: ${SERVICE}"
+  echo "Local Port: ${PORT}"
+  echo ""
+  echo "CONNECTOR STRING (share this to connect):"
+  echo "----------------------------------------------"
+  echo "${CONNECTOR}"
+  echo "----------------------------------------------"
+  echo ""
+  echo "To connect from another device, run:"
+  echo "  holesail ${CONNECTOR}"
+  echo ""
+  echo "This will create a local proxy on the connecting device."
+  echo ""
+  
+  # Show QR code if qrencode is available
+  if command -v qrencode > /dev/null; then
+    echo "QR Code:"
+    qrencode -t ANSIUTF8 "${CONNECTOR}"
+    echo ""
+    # Also show on LCD if available
+    sudo /home/admin/config.scripts/blitz.display.sh qr "${CONNECTOR}" 2>/dev/null
+  fi
+  
+  return 0
+}
+
+###############################################
+# STATUS
+###############################################
+if [ "$1" = "status" ]; then
+  echo "# Holesail Status"
+  echo ""
+  
+  # Check if holesail is installed
+  if command -v holesail > /dev/null; then
+    VERSION=$(holesail --version 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+)*$')
+    echo "holesailInstalled=1"
+    echo "holesailVersion='${VERSION}'"
+  else
+    echo "holesailInstalled=0"
+  fi
+  
+  # Check each service
+  for SERVICE in clnrest lndrest electrs fulcrum; do
+    if isHolesailEnabled "${SERVICE}"; then
+      CONNECTOR=$(getConnector "${SERVICE}")
+      ACTIVE=$(sudo systemctl is-active holesail-${SERVICE} 2>/dev/null)
+      echo "holesail_${SERVICE}='on'"
+      echo "holesail_${SERVICE}_connector='${CONNECTOR}'"
+      echo "holesail_${SERVICE}_active='${ACTIVE}'"
+    else
+      echo "holesail_${SERVICE}='off'"
+    fi
+  done
+  
+  exit 0
+fi
 
 ###############################################
 # ON (installs Holesail)
@@ -183,6 +380,7 @@ if [ "$1" = "1" ] || [ "$1" = "on" ]; then
   fi
   
   echo "# OK - Holesail is now installed and ready"
+  echo "# Use 'bonus.holesail-manager.sh menu' to enable tunnels for services"
   exit 0
 fi
 
@@ -203,153 +401,405 @@ if [ "$1" = "0" ] || [ "$1" = "off" ]; then
 fi
 
 ###############################################
-# LIST (listing holesail sessions)
-###############################################
-if [ "$1" = "list" ]; then
-  echo "Running 'sudo systemctl status holesail-*' to list all Holesail sessions:"
-  sudo systemctl status holesail-*
-  exit 0
-fi
-
-###############################################
-# ADD (adds a new holesail session)
+# ADD (enables holesail for a service)
 ###############################################
 if [ "$1" = "add" ]; then
   if [ -z "$2" ]; then
     echo "# Error: Service parameter is required"
+    echo "# Usage: bonus.holesail-manager.sh add <clnrest|lndrest|electrs|fulcrum>"
     exit 1
   fi
   
-  if [[ "$2" != holesail-* ]]; then
-    SERVICE="holesail-$2"
-  else
-    SERVICE="$2"
-  fi
-
-  if [ -f "/etc/systemd/system/${SERVICE}.service" ]; then
-    echo "# Error: Service ${SERVICE} already exists"
+  SERVICE="$2"
+  # Remove holesail- prefix if present
+  SERVICE="${SERVICE#holesail-}"
+  
+  # Check if service is valid
+  if ! getServicePort "${SERVICE}" > /dev/null; then
+    echo "# Error: Unknown service: ${SERVICE}"
+    echo "# Supported services: clnrest, lndrest, electrs, fulcrum"
     exit 1
   fi
-
-  echo "# Adding new Holesail port forwarding for ${SERVICE}..."
-  createSystemdService "$SERVICE"
-  echo "Success. Run 'sudo journalctl -u ${SERVICE}' to see connect string and QR code"
+  
+  # Check if service is available
+  if ! isServiceAvailable "${SERVICE}"; then
+    echo "# Error: Service ${SERVICE} is not enabled on this system"
+    exit 1
+  fi
+  
+  # Check if already enabled
+  if isHolesailEnabled "${SERVICE}"; then
+    echo "# Holesail is already enabled for ${SERVICE}"
+    CONNECTOR=$(getConnector "${SERVICE}")
+    echo "# Connector: ${CONNECTOR}"
+    exit 0
+  fi
+  
+  echo "# Adding Holesail tunnel for ${SERVICE}..."
+  if createSystemdService "${SERVICE}"; then
+    echo ""
+    echo "# SUCCESS - Holesail tunnel created for ${SERVICE}"
+    showConnectionInfo "${SERVICE}"
+  else
+    echo "# FAIL - Could not create Holesail tunnel for ${SERVICE}"
+    exit 1
+  fi
   exit 0
 fi
 
 ###############################################
-# REMOVE (removes a holesail session)
+# REMOVE (disables holesail for a service)
 ###############################################
 if [ "$1" = "remove" ]; then
   if [ -z "$2" ]; then
     echo "# Error: Service parameter is required"
+    echo "# Usage: bonus.holesail-manager.sh remove <clnrest|lndrest|electrs|fulcrum>"
     exit 1
   fi
-
-  if [[ "$2" != holesail-* ]]; then
-    SERVICE="holesail-$2"
-  else
-    SERVICE="$2"
+  
+  SERVICE="$2"
+  # Remove holesail- prefix if present
+  SERVICE="${SERVICE#holesail-}"
+  
+  if ! isHolesailEnabled "${SERVICE}"; then
+    echo "# Holesail is not enabled for ${SERVICE}"
+    exit 0
   fi
-
-  if [ ! -f "/etc/systemd/system/${SERVICE}.service" ]; then
-    echo "# Error: Service ${SERVICE} does not exist"
-    exit 1
-  fi
-
-  echo "# Removing Holesail port forwarding for ${SERVICE}..."
+  
+  echo "# Removing Holesail tunnel for ${SERVICE}..."
   removeSystemdService "${SERVICE}"
+  echo "# OK - Holesail tunnel removed for ${SERVICE}"
   exit 0
 fi
 
-
+###############################################
+# CONNECT (shows connection info)
+###############################################
+if [ "$1" = "connect" ]; then
+  if [ -z "$2" ]; then
+    echo "# Error: Service parameter is required"
+    echo "# Usage: bonus.holesail-manager.sh connect <clnrest|lndrest|electrs|fulcrum>"
+    exit 1
+  fi
+  
+  SERVICE="$2"
+  # Remove holesail- prefix if present
+  SERVICE="${SERVICE#holesail-}"
+  
+  if ! isHolesailEnabled "${SERVICE}"; then
+    echo "# Error: Holesail is not enabled for ${SERVICE}"
+    echo "# Enable it first with: bonus.holesail-manager.sh add ${SERVICE}"
+    exit 1
+  fi
+  
+  showConnectionInfo "${SERVICE}"
+  echo ""
+  echo "Press ENTER to continue..."
+  read -r
+  sudo /home/admin/config.scripts/blitz.display.sh hide 2>/dev/null
+  exit 0
+fi
 
 ###############################################
-# MENU (shows menu)  ---NOT working yet!!!
+# MENU (interactive menu)
 ###############################################
 if [ "$1" = "menu" ]; then
 
-  echo "services default values"
-  if [ ${#holesail-clrest} -eq 0 ]; then holesail-clrest="off"; fi
-  if [ ${#holesail-lndrest} -eq 0 ]; then holesail-lndrest="off"; fi
-  if [ ${#holesail-electrs} -eq 0 ]; then holesail-electrs="off"; fi
-  if [ ${#holesail-fulcrum} -eq 0 ]; then holesail-fulcrum="off"; fi
+  # Check if holesail is installed
+  if ! command -v holesail > /dev/null; then
+    whiptail --title " Holesail Not Installed " --yesno "
+Holesail is not installed on this system.
 
+Holesail is a peer-to-peer tunneling solution that allows 
+you to expose local services to the internet without:
+- Port forwarding
+- Static IP addresses
+- Complex configurations
 
+Would you like to install Holesail now?
+" 15 60
+    if [ $? -eq 0 ]; then
+      clear
+      /home/admin/config.scripts/bonus.holesail-manager.sh on
+      echo ""
+      echo "Press ENTER to continue..."
+      read -r
+    fi
+    exit 0
+  fi
+
+  # Build menu options based on available services
   OPTIONS=()
-  # Check if any supported services are enabled
-  if [ "${holesail-electrs}" == "on" ]; then
-    OPTIONS+=(rs 'BTC Electrum Rust Server' ${holesail-electrs})
+  
+  # CLNrest option
+  if [ "${cl}" == "on" ]; then
+    if isHolesailEnabled "clnrest"; then
+      OPTIONS+=(CLNREST "Core Lightning REST [ENABLED]")
+    else
+      OPTIONS+=(CLNREST "Core Lightning REST [disabled]")
+    fi
   fi
-  if [ "${holesail-fulcrum}" == "on" ]; then
-    OPTIONS+=(fu 'Fulcrum Server' ${holesail-fulcrum})
+  
+  # LND REST option
+  if [ "${lnd}" == "on" ]; then
+    if isHolesailEnabled "lndrest"; then
+      OPTIONS+=(LNDREST "LND REST API [ENABLED]")
+    else
+      OPTIONS+=(LNDREST "LND REST API [disabled]")
+    fi
+  fi
+  
+  # Electrs option
+  if [ "${ElectRS}" == "on" ]; then
+    if isHolesailEnabled "electrs"; then
+      OPTIONS+=(ELECTRS "Electrum Rust Server [ENABLED]")
+    else
+      OPTIONS+=(ELECTRS "Electrum Rust Server [disabled]")
+    fi
+  fi
+  
+  # Fulcrum option
+  if [ "${fulcrum}" == "on" ]; then
+    if isHolesailEnabled "fulcrum"; then
+      OPTIONS+=(FULCRUM "Fulcrum Electrum Server [ENABLED]")
+    else
+      OPTIONS+=(FULCRUM "Fulcrum Electrum Server [disabled]")
+    fi
+  fi
+  
+  # Add status and uninstall options
+  OPTIONS+=(STATUS "Show status of all tunnels")
+  OPTIONS+=(UNINSTALL "Uninstall Holesail")
+  
+  if [ ${#OPTIONS[@]} -eq 4 ]; then
+    # Only STATUS and UNINSTALL options (no services available)
+    whiptail --title " No Services Available " --msgbox "
+No compatible services are currently enabled on this system.
+
+Holesail can create tunnels for:
+- Core Lightning REST (CLNrest)
+- LND REST API
+- Electrum Rust Server (Electrs)
+- Fulcrum Electrum Server
+
+Please enable one of these services first.
+" 14 55
+    exit 0
   fi
 
-  if [ "${holesail-elements}" == "on" ]; then
-    OPTIONS+=(lq 'Elements/Liquid' ${holesail-elements})
-  fi
+  CHOICE=$(whiptail --title " Holesail Manager " --menu "
+Holesail creates peer-to-peer tunnels to expose your 
+services without port forwarding or static IPs.
 
-  if [ "${holesail-lndrest}" == "on" ]; then
-    OPTIONS+=(ln "LND REST API" ${holesail-lndrest})
-  fi
+Toggle services on/off or view connection info:
+" 18 60 8 "${OPTIONS[@]}" 3>&1 1>&2 2>&3)
+  
+  case $CHOICE in
+    CLNREST)
+      if isHolesailEnabled "clnrest"; then
+        # Show submenu for enabled service
+        SUBCHOICE=$(whiptail --title " CLNrest Holesail " --menu "" 12 50 4 \
+          "CONNECT" "Show connection info & QR code" \
+          "DISABLE" "Disable Holesail tunnel" \
+          3>&1 1>&2 2>&3)
+        case $SUBCHOICE in
+          CONNECT)
+            clear
+            /home/admin/config.scripts/bonus.holesail-manager.sh connect clnrest
+            ;;
+          DISABLE)
+            clear
+            /home/admin/config.scripts/bonus.holesail-manager.sh remove clnrest
+            echo ""
+            echo "Press ENTER to continue..."
+            read -r
+            ;;
+        esac
+      else
+        # Enable the service
+        whiptail --title " Enable CLNrest Holesail " --yesno "
+This will create a Holesail tunnel for CLNrest.
 
-  if [ "${holesail-clrest}" == "on" ]; then
-    OPTIONS+=(cl "CLN REST API" ${holesail-clrest})
-  fi
+You will receive a unique connector string that can be 
+used to connect to your CLNrest API from anywhere.
 
-  if [ ${#OPTIONS[@]} -eq 0 ]; then
-    echo "# Error: No supported services are enabled"
-    exit 1
-  fi
-
-
-  # Menu options using whiptail
-  HEIGHT=15
-  WIDTH=60
-  CHOICE=$(whiptail --title "Holesail Manager" --menu "Choose an option:" $HEIGHT $WIDTH 4 \
-      "LIST" "List all running holsail services" \
-      "ADD/REMOVE" "Add or remove a holesail service" 3>&1 1>&2 2>&3)
-
-      case $CHOICE in
-          "LIST")
-              /home/admin/config.scripts/bonus.holesail-manager.sh list
-              ;;
-          "ADD/REMOVE")
-              # Menu options using whiptail
-              CHOICE_HEIGHT=$(("${#OPTIONS[@]}/2+1"))
-              HEIGHT=$((CHOICE_HEIGHT+7))
-              CHOICE=$(dialog --clear \
-                              --title "Holesail Manager" \
-                              --checklist "Use spacebar to activate/de-activate" \
-                              $HEIGHT 55 20  \
-                              "${OPTIONS[@]}" \
-                              2>&1 >/dev/tty)
-              dialogcancel=$?
-              echo "done dialog"
-              clear
-
-              # check if user canceled dialog
-              if [ ${dialogcancel} -eq 1 ]; then
-                echo "user canceled"
-                exit 0
-              fi
-
-              # loop through all options
-              for i in $(seq 0 $((${#OPTIONS[@]}/2-1))); do
-                option=${OPTIONS[$i*2]}
-                value=${OPTIONS[$i*2+1]}
-                if [[ $CHOICE =~ $option ]]; then
-                  # enable
-                  echo "Enabling $option"
-                  /home/admin/config.scripts/bonus.holesail-manager.sh add $option
-                else
-                  # disable
-                  echo "Disabling $option"
-                  /home/admin/config.scripts/bonus.holesail-manager.sh remove $option
-                fi
-              done
-              ;;
-      esac
+Enable Holesail tunnel for CLNrest?
+" 12 55
+        if [ $? -eq 0 ]; then
+          clear
+          /home/admin/config.scripts/bonus.holesail-manager.sh add clnrest
+          echo ""
+          echo "Press ENTER to continue..."
+          read -r
+        fi
+      fi
       ;;
+      
+    LNDREST)
+      if isHolesailEnabled "lndrest"; then
+        SUBCHOICE=$(whiptail --title " LND REST Holesail " --menu "" 12 50 4 \
+          "CONNECT" "Show connection info & QR code" \
+          "DISABLE" "Disable Holesail tunnel" \
+          3>&1 1>&2 2>&3)
+        case $SUBCHOICE in
+          CONNECT)
+            clear
+            /home/admin/config.scripts/bonus.holesail-manager.sh connect lndrest
+            ;;
+          DISABLE)
+            clear
+            /home/admin/config.scripts/bonus.holesail-manager.sh remove lndrest
+            echo ""
+            echo "Press ENTER to continue..."
+            read -r
+            ;;
+        esac
+      else
+        whiptail --title " Enable LND REST Holesail " --yesno "
+This will create a Holesail tunnel for LND REST API.
+
+You will receive a unique connector string that can be 
+used to connect to your LND REST API from anywhere.
+
+Enable Holesail tunnel for LND REST?
+" 12 55
+        if [ $? -eq 0 ]; then
+          clear
+          /home/admin/config.scripts/bonus.holesail-manager.sh add lndrest
+          echo ""
+          echo "Press ENTER to continue..."
+          read -r
+        fi
+      fi
+      ;;
+      
+    ELECTRS)
+      if isHolesailEnabled "electrs"; then
+        SUBCHOICE=$(whiptail --title " Electrs Holesail " --menu "" 12 50 4 \
+          "CONNECT" "Show connection info & QR code" \
+          "DISABLE" "Disable Holesail tunnel" \
+          3>&1 1>&2 2>&3)
+        case $SUBCHOICE in
+          CONNECT)
+            clear
+            /home/admin/config.scripts/bonus.holesail-manager.sh connect electrs
+            ;;
+          DISABLE)
+            clear
+            /home/admin/config.scripts/bonus.holesail-manager.sh remove electrs
+            echo ""
+            echo "Press ENTER to continue..."
+            read -r
+            ;;
+        esac
+      else
+        whiptail --title " Enable Electrs Holesail " --yesno "
+This will create a Holesail tunnel for Electrs.
+
+You will receive a unique connector string that can be 
+used to connect to your Electrum server from anywhere.
+
+Enable Holesail tunnel for Electrs?
+" 12 55
+        if [ $? -eq 0 ]; then
+          clear
+          /home/admin/config.scripts/bonus.holesail-manager.sh add electrs
+          echo ""
+          echo "Press ENTER to continue..."
+          read -r
+        fi
+      fi
+      ;;
+      
+    FULCRUM)
+      if isHolesailEnabled "fulcrum"; then
+        SUBCHOICE=$(whiptail --title " Fulcrum Holesail " --menu "" 12 50 4 \
+          "CONNECT" "Show connection info & QR code" \
+          "DISABLE" "Disable Holesail tunnel" \
+          3>&1 1>&2 2>&3)
+        case $SUBCHOICE in
+          CONNECT)
+            clear
+            /home/admin/config.scripts/bonus.holesail-manager.sh connect fulcrum
+            ;;
+          DISABLE)
+            clear
+            /home/admin/config.scripts/bonus.holesail-manager.sh remove fulcrum
+            echo ""
+            echo "Press ENTER to continue..."
+            read -r
+            ;;
+        esac
+      else
+        whiptail --title " Enable Fulcrum Holesail " --yesno "
+This will create a Holesail tunnel for Fulcrum.
+
+You will receive a unique connector string that can be 
+used to connect to your Electrum server from anywhere.
+
+Enable Holesail tunnel for Fulcrum?
+" 12 55
+        if [ $? -eq 0 ]; then
+          clear
+          /home/admin/config.scripts/bonus.holesail-manager.sh add fulcrum
+          echo ""
+          echo "Press ENTER to continue..."
+          read -r
+        fi
+      fi
+      ;;
+      
+    STATUS)
+      clear
+      echo "=============================================="
+      echo "  HOLESAIL STATUS"
+      echo "=============================================="
+      echo ""
+      
+      # Show holesail version
+      VERSION=$(holesail --version 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+)*$')
+      echo "Holesail Version: ${VERSION}"
+      echo ""
+      
+      # Show status of each service
+      for SERVICE in clnrest lndrest electrs fulcrum; do
+        if isHolesailEnabled "${SERVICE}"; then
+          CONNECTOR=$(getConnector "${SERVICE}")
+          ACTIVE=$(sudo systemctl is-active holesail-${SERVICE} 2>/dev/null)
+          echo "${SERVICE}:"
+          echo "  Status: ${ACTIVE}"
+          echo "  Connector: ${CONNECTOR}"
+          echo ""
+        fi
+      done
+      
+      # Show systemd status
+      echo "----------------------------------------------"
+      echo "Systemd Services:"
+      sudo systemctl list-units 'holesail-*' --no-pager 2>/dev/null || echo "No holesail services running"
+      echo ""
+      echo "Press ENTER to continue..."
+      read -r
+      ;;
+      
+    UNINSTALL)
+      whiptail --title " Uninstall Holesail " --yesno "
+This will:
+- Stop all Holesail tunnels
+- Remove all connector strings
+- Uninstall Holesail from the system
+
+Are you sure you want to uninstall Holesail?
+" 12 55
+      if [ $? -eq 0 ]; then
+        clear
+        /home/admin/config.scripts/bonus.holesail-manager.sh off
+        echo ""
+        echo "Press ENTER to continue..."
+        read -r
+      fi
+      ;;
+  esac
+  
   exit 0
 fi
