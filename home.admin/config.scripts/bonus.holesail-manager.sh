@@ -156,6 +156,22 @@ function install() {
     fi
   fi
 
+  # Install uuidgen if not available
+  if ! command -v uuidgen > /dev/null; then
+    echo "# Installing uuidgen..."
+    sudo apt-get update
+    sudo apt-get install -y uuid-runtime
+    if [ $? -ne 0 ]; then
+      echo "# Error: Failed to install uuidgen"
+      return 1
+    fi
+    # Verify installation
+    if ! command -v uuidgen > /dev/null; then
+      echo "# Error: uuidgen installation verification failed"
+      return 1
+    fi
+  fi
+
   # Check Node.js version
   NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
   if [ "${NODE_VERSION}" -lt "${HOLESAIL_MIN_NODE_VERSION}" ]; then
