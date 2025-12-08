@@ -278,7 +278,7 @@ ZEUS_CLREST)
 	;;
 CLNREST_HOLESAIL)
     # Show CLNrest Holesail connection info
-    /home/admin/config.scripts/bonus.holesail-manager.sh connect clnrest
+    /home/admin/config.scripts/bonus.holesail-server.sh connect clnrest
     exit 0;
   ;;
 esac

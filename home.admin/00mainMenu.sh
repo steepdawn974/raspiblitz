@@ -326,7 +326,7 @@ case $CHOICE in
             sudo /home/admin/config.scripts/bonus.thunderhub.sh menu
             ;;
         HOLESAIL)
-            sudo /home/admin/config.scripts/bonus.holesail-manager.sh menu
+            sudo /home/admin/config.scripts/bonus.holesail-server.sh menu
             ;;
         ZEROTIER)
             sudo /home/admin/config.scripts/internet.zerotier.sh menu

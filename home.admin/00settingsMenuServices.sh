@@ -718,7 +718,7 @@ if [ ${check} -eq 1 ]; then choice="on"; fi
 if [ "${holesail}" != "${choice}" ]; then
   echo "Holesail Setting changed .."
   anychange=1
-  sudo /home/admin/config.scripts/bonus.holesail-manager.sh ${choice}
+  sudo /home/admin/config.scripts/bonus.holesail-server.sh ${choice}
   errorOnInstall=$?
   if [ "${choice}" =  "on" ]; then
     if [ ${errorOnInstall} -eq 0 ]; then
@@ -726,7 +726,7 @@ if [ "${holesail}" != "${choice}" ]; then
       whiptail --title 'SUCCESS' --msgbox "Holesail was installed" 9 65
     else
       holesail="off"
-      whiptail --title 'FAIL' --msgbox "Holesail installation is cancelled\nTry again from the menu or install from the terminal with:\nsudo /home/admin/config.scripts/bonus.holesail-manager.sh on" 9 65
+      whiptail --title 'FAIL' --msgbox "Holesail installation is cancelled\nTry again from the menu or install from the terminal with:\nsudo /home/admin/config.scripts/bonus.holesail-server.sh on" 9 65
     fi
   else
     holesail="off"
