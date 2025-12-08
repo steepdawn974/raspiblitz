@@ -252,7 +252,7 @@ function createSystemdService() {
   fi
 
   # Generate unique key string: service@hostname-uuid
-  local KEY="${SERVICE}@$(hostname)-$(uuidgen)"
+  local KEY="${SERVICE}-$(hostname)-$(uuidgen)"
   local SERVICE_NAME="holesail-${SERVICE}"
   local KEY_FILE="${HOLESAIL_DATA_DIR}/${SERVICE}.key"
   
