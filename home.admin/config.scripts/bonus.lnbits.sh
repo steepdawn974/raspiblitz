@@ -46,7 +46,7 @@ function postgresConfig() {
   fi
   # create database for new installations and keep old
   sudo -u postgres psql -c "create database lnbits_db;" 2>/dev/null
-  sudo -u postgres psql -c "create user lnbits_user with encrypted password 'raspiblitz';" 2>/dev/null
+  sudo -u postgres psql -c "create user lnbits_user with encrypted password '$PASSWORDB';" 2>/dev/null
   sudo -u postgres psql -c "grant all privileges on database lnbits_db to lnbits_user;" 2>/dev/null
 
   # check
@@ -823,7 +823,7 @@ if [ "$1" = "1" ] || [ "$1" = "on" ]; then
     # example: postgres://<user>:<password>@<host>/<database>
     sudo sed -i "/^LNBITS_DATABASE_URL=/d" $lnbitsConfig 2>/dev/null
     sudo sed -i "/^LNBITS_DATA_FOLDER=/d" $lnbitsConfig 2>/dev/null
-    sudo bash -c "echo 'LNBITS_DATABASE_URL=postgres://postgres:postgres@localhost:5432/lnbits_db' >> ${lnbitsConfig}"
+    sudo bash -c "echo 'LNBITS_DATABASE_URL=postgres://lnbits_user:$PASSWORDB@/var/run/postgresql/lnbits_db' >> ${lnbitsConfig}"
     sudo bash -c "echo 'LNBITS_DATA_FOLDER=/mnt/hdd/app-data/LNBits/data' >> ${lnbitsConfig}"
 
   else
@@ -1247,7 +1247,7 @@ if [ "$1" = "migrate" ]; then
     # example: postgres://<user>:<password>@<host>/<database>
     # add new postgres config
     sudo sed -i "/^LNBITS_DATABASE_URL=/d" $lnbitsConfig 2>/dev/null
-    sudo bash -c "echo 'LNBITS_DATABASE_URL=postgres://lnbits_user:raspiblitz@localhost:5432/lnbits_db' >> ${lnbitsConfig}"
+    sudo bash -c "echo 'LNBITS_DATABASE_URL=postgres://lnbits_user:$PASSWORDB@/var/run/postgresql/lnbits_db' >> ${lnbitsConfig}"
 
     # clean start on new postgres db prior migration
     echo "# LNBits first start with clean PostgreSQL"

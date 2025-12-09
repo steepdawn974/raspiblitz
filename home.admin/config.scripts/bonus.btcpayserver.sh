@@ -45,7 +45,7 @@ function NBXplorerConfig() {
   else
     echo "# Generate the database for nbxplorer"
     sudo -u postgres psql -c "CREATE DATABASE nbxplorermainnet TEMPLATE template0 LC_CTYPE 'C' LC_COLLATE 'C' ENCODING 'UTF8';"
-    sudo -u postgres psql -c "CREATE USER nbxplorer WITH ENCRYPTED PASSWORD 'raspiblitz';"
+    sudo -u postgres psql -c "CREATE USER nbxplorer WITH ENCRYPTED PASSWORD '$PASSWORD_B';"
     sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE nbxplorermainnet TO nbxplorer;"
     # for migrations
     sudo -u postgres psql -d nbxplorermainnet -c "GRANT ALL PRIVILEGES ON SCHEMA public TO nbxplorer;"
@@ -62,7 +62,7 @@ network=mainnet
 btcnodeendpoint=127.0.0.1:8336
 btc.rpc.user=${RPC_USER}
 btc.rpc.password=${PASSWORD_B}
-postgres=User ID=nbxplorer;Host=localhost;Port=5432;Application Name=nbxplorer;MaxPoolSize=20;Database=nbxplorermainnet;Password='raspiblitz';
+postgres=User ID=nbxplorer;Host=/var/run/postgresql;Port=5432;Application Name=nbxplorer;MaxPoolSize=20;Database=nbxplorermainnet;Password='$PASSWORD_B';
 automigrate=1
 nomigrateevts=1
 " | sudo -u btcpay tee /home/btcpay/.nbxplorer/Main/settings.config
@@ -78,7 +78,7 @@ function BtcPayConfig() {
   else
     echo "# Generate the database for btcpay"
     sudo -u postgres psql -c "CREATE DATABASE btcpaymainnet TEMPLATE template0 LC_CTYPE 'C' LC_COLLATE 'C' ENCODING 'UTF8';"
-    sudo -u postgres psql -c "CREATE USER btcpay WITH ENCRYPTED PASSWORD 'raspiblitz';"
+    sudo -u postgres psql -c "CREATE USER btcpay WITH ENCRYPTED PASSWORD '$PASSWORD_B';"
     sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE btcpaymainnet TO btcpay;"
     # for migrations
     sudo -u postgres psql -d btcpaymainnet -c "GRANT ALL PRIVILEGES ON SCHEMA public TO btcpay;"
@@ -102,8 +102,8 @@ BTC.explorer.url=http://127.0.0.1:24444/
 BTC.lightning=type=lnd-rest;server=https://127.0.0.1:8080/;macaroonfilepath=/home/btcpay/admin.macaroon;certthumbprint=$FINGERPRINT
 
 ### Database ###
-postgres=User ID=btcpay;Host=localhost;Port=5432;Application Name=btcpay;MaxPoolSize=20;Database=btcpaymainnet;Password='raspiblitz';
-explorer.postgres=User ID=nbxplorer;Host=localhost;Port=5432;Application Name=nbxplorer;MaxPoolSize=20;Database=nbxplorermainnet;Password='raspiblitz';
+postgres=User ID=btcpay;Host=/var/run/postgresql;Port=5432;Application Name=btcpay;MaxPoolSize=20;Database=btcpaymainnet;Password='$PASSWORD_B';
+explorer.postgres=User ID=nbxplorer;Host=/var/run/postgresql;Port=5432;Application Name=nbxplorer;MaxPoolSize=20;Database=nbxplorermainnet;Password='$PASSWORD_B';
 " | sudo -u btcpay tee /home/btcpay/.btcpayserver/Main/settings.config
 }
 
