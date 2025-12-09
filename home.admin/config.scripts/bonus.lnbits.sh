@@ -41,13 +41,22 @@ function postgresConfig() {
   source <(/home/admin/_cache.sh get LNBitsMigrate)
   if [ "${LNBitsMigrate}" == "on" ]; then
     echo "# LNBitsMigrate=on --> Cleaning old lnbits_db & lnbits_user"
-    sudo -u postgres psql -c "drop database lnbits_db;"
-    sudo -u postgres psql -c "drop user lnbits_user;"
+    sudo -u postgres psql -c "drop database lnbits_db;" 2>/dev/null
+    sudo -u postgres psql -c "drop user lnbits_user;" 2>/dev/null
   fi
-  # create database for new installations and keep old
+  
+  # create database for new installations (ignore if exists)
   sudo -u postgres psql -c "create database lnbits_db;" 2>/dev/null
   sudo -u postgres psql -c "create user lnbits_user with encrypted password '$PASSWORDB';" 2>/dev/null
   sudo -u postgres psql -c "grant all privileges on database lnbits_db to lnbits_user;" 2>/dev/null
+
+  # Fix ownership for existing databases (migration case)
+  echo "# Fixing ownership and permissions for existing data"
+  sudo -u postgres psql -d lnbits_db -c "REASSIGN OWNED BY postgres TO lnbits_user;" 2>/dev/null || true
+  sudo -u postgres psql -d lnbits_db -c "GRANT ALL ON SCHEMA public TO lnbits_user;" 2>/dev/null
+  sudo -u postgres psql -d lnbits_db -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO lnbits_user;" 2>/dev/null
+  sudo -u postgres psql -d lnbits_db -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO lnbits_user;" 2>/dev/null
+  sudo -u postgres psql -d lnbits_db -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO lnbits_user;" 2>/dev/null
 
   # check
   check=$(sudo -u postgres psql -c "SELECT datname FROM pg_database;" | grep lnbits_db)
