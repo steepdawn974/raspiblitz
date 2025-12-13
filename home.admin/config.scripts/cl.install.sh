@@ -43,18 +43,6 @@ function installDependencies() {
   # additional requirements (postgres support)
   sudo apt-get install -y libpq-dev
 
-  # Install uv for Python dependency management (replaces poetry in CLN 25.x+)
-  echo "# Installing uv for Python dependency management"
-  if ! command -v uv &>/dev/null; then
-    curl -LsSf https://astral.sh/uv/install.sh | sudo UV_INSTALL_DIR=/usr/local/bin sh
-    # Ensure uv is in PATH for current session
-    export PATH="/usr/local/bin:$PATH"
-  fi
-
-  # Sync Python dependencies with uv
-  cd /home/bitcoin/lightning || exit 1
-  sudo -u bitcoin uv sync --all-extras --all-groups --frozen
-
   # rust deps for cln-grpc and clnrest plugins
   echo "# Install Rust to /opt/rust/"
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
@@ -77,6 +65,16 @@ function installDependencies() {
   if ! grep -q "CARGO_HOME=/opt/rust" /etc/environment; then
     echo 'CARGO_HOME=/opt/rust' | sudo tee -a /etc/environment
   fi
+
+  # Install uv for Python dependency management (replaces poetry in CLN 25.x+)
+  echo "# Installing uv for Python dependency management"
+  if ! command -v uv &>/dev/null; then
+    sudo RUSTUP_HOME=/opt/rust CARGO_HOME=/opt/rust /opt/rust/bin/cargo install --locked --root /usr/local uv || exit 1
+  fi
+
+  # Sync Python dependencies with uv
+  cd /home/bitcoin/lightning || exit 1
+  sudo -u bitcoin uv sync --all-extras --all-groups --frozen
 
   sudo apt-get install -y protobuf-compiler
 
