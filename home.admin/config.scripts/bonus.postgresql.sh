@@ -76,7 +76,7 @@ function apply_socket_config() {
 
 # Function to retrieve postgres password (Password B)
 function load_postgres_password() {
-  # Load password B from bitcoin.conf (where it's stored in plaintext)
+  # Load password B from bitcoin.conf (standard Bitcoin RPC password)
   if [ -f "/mnt/hdd/app-data/bitcoin/bitcoin.conf" ]; then
     PASSWORDB=$(grep rpcpassword /mnt/hdd/app-data/bitcoin/bitcoin.conf | cut -d'=' -f2 | tr -d ' ')
   fi
