@@ -68,7 +68,7 @@ function apply_socket_config() {
   fi
   
   # Update pg_hba.conf for socket-only access
-  if ! sudo grep -q "^#host" /etc/postgresql/$PG_VERSION/main/pg_hba.conf; then
+  if sudo grep -q "^host" /etc/postgresql/$PG_VERSION/main/pg_hba.conf; then
     sudo cp /etc/postgresql/$PG_VERSION/main/pg_hba.conf /etc/postgresql/$PG_VERSION/main/pg_hba.conf.backup
     sudo sed -i '/^host/s/^/#/' /etc/postgresql/$PG_VERSION/main/pg_hba.conf
   fi
