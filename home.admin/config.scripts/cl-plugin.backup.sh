@@ -16,7 +16,7 @@ function help() {
 }
 
 # https://github.com/lightningd/plugins/commits/master/backup
-pinnedVersion="46f28a88a2aa15c7c1b3c95a21dd99ea2195995e"
+pinnedVersion="b63622d66ea8cfaa1e99fde1626ae86815ad1be8"
 
 # command info
 if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "-help" ]; then
