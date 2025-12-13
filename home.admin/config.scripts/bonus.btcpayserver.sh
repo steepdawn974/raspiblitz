@@ -70,6 +70,14 @@ nomigrateevts=1
 }
 
 function BtcPayConfig() {
+
+  RPC_USER=$(sudo cat /mnt/hdd/app-data/bitcoin/bitcoin.conf | grep rpcuser | cut -c 9-)
+  PASSWORD_B=$(sudo cat /mnt/hdd/app-data/bitcoin/bitcoin.conf | grep rpcpassword | cut -c 13-)
+  if [ "${PASSWORD_B}" == "" ]; then
+    echo "# FAIL: Password B not available (rpcpassword missing)"
+    exit 1
+  fi
+
   # set thumbprint (remove colons and make lowercase)
   FINGERPRINT=$(openssl x509 -noout -fingerprint -sha256 -inform pem -in /home/btcpay/.lnd/tls.cert | cut -d"=" -f2 | tr -d ':' | awk '{print tolower($0)}')
   # set up postgres

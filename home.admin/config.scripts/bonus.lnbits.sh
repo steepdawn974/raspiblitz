@@ -832,7 +832,7 @@ if [ "$1" = "1" ] || [ "$1" = "on" ]; then
     # example: postgres://<user>:<password>@<host>/<database>
     sudo sed -i "/^LNBITS_DATABASE_URL=/d" $lnbitsConfig 2>/dev/null
     sudo sed -i "/^LNBITS_DATA_FOLDER=/d" $lnbitsConfig 2>/dev/null
-    sudo bash -c "echo 'LNBITS_DATABASE_URL=postgres://lnbits_user:$PASSWORDB@/var/run/postgresql/lnbits_db' >> ${lnbitsConfig}"
+    sudo bash -c "echo 'LNBITS_DATABASE_URL=postgres://lnbits_user:$PASSWORDB@localhost/lnbits_db?host=/var/run/postgresql' >> ${lnbitsConfig}"
     sudo bash -c "echo 'LNBITS_DATA_FOLDER=/mnt/hdd/app-data/LNBits/data' >> ${lnbitsConfig}"
 
   else
@@ -1256,7 +1256,7 @@ if [ "$1" = "migrate" ]; then
     # example: postgres://<user>:<password>@<host>/<database>
     # add new postgres config
     sudo sed -i "/^LNBITS_DATABASE_URL=/d" $lnbitsConfig 2>/dev/null
-    sudo bash -c "echo 'LNBITS_DATABASE_URL=postgres://lnbits_user:$PASSWORDB@/var/run/postgresql/lnbits_db' >> ${lnbitsConfig}"
+    sudo bash -c "echo 'LNBITS_DATABASE_URL=postgres://lnbits_user:$PASSWORDB@localhost/lnbits_db?host=/var/run/postgresql' >> ${lnbitsConfig}"
 
     # clean start on new postgres db prior migration
     echo "# LNBits first start with clean PostgreSQL"
