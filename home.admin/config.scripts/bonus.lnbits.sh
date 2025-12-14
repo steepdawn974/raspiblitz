@@ -29,6 +29,16 @@ fi
 echo "# Running: 'bonus.lnbits.sh $*'"
 source /mnt/hdd/app-data/raspiblitz.conf
 
+if [ -z "${network}" ]; then
+  network="bitcoin"
+fi
+
+PASSWORDB=$(sudo cat /mnt/hdd/app-data/${network}/${network}.conf 2>/dev/null | grep "^rpcpassword=" | cut -c 13-)
+if [ "${PASSWORDB}" == "" ]; then
+  echo "# FAIL: Password B not available (rpcpassword missing)"
+  exit 1
+fi
+
 lnbitsDataDir="/mnt/hdd/app-data/LNBits/data"
 lnbitsConfig="${lnbitsDataDir}/.env"
 
