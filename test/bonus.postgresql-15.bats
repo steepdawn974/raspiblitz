@@ -21,13 +21,13 @@ setup() {
 }
 
 @test "Create test database" {
-  sudo -u postgres psql -c "CREATE DATABASE testdb TEMPLATE template0 LC_CTYPE 'C' LC_COLLATE 'C' ENCODING 'UTF8';"
-  sudo -u postgres psql -c "CREATE USER testuser WITH ENCRYPTED PASSWORD 'raspiblitz';"
-  sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE testdb TO testuser;"
+  sudo -E -u postgres psql -c "CREATE DATABASE testdb TEMPLATE template0 LC_CTYPE 'C' LC_COLLATE 'C' ENCODING 'UTF8';"
+  sudo -E -u postgres psql -c "CREATE USER testuser WITH ENCRYPTED PASSWORD 'raspiblitz';"
+  sudo -E -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE testdb TO testuser;"
   # check if PostgreSQL cluster is running
   run pg_lsclusters
   [ "$status" -eq 0 ]
-  run sudo -u postgres psql -l
+  run sudo -E -u postgres psql -l
   echo "$output" | grep -q "testdb"
   [ "$?" -eq 0 ]
   echo "$output" | grep -q "testuser"
@@ -57,7 +57,7 @@ setup() {
   # check the database
   run pg_lsclusters
   [ "$status" -eq 0 ]
-  run sudo -u postgres psql -l
+  run sudo -E -u postgres psql -l
   echo "$output" | grep -q "testdb"
   [ "$?" -eq 0 ]
   echo "$output" | grep -q "testuser"
@@ -86,7 +86,7 @@ setup() {
   [ "$status" -eq 0 ]
   run pg_lsclusters
   [ "$status" -eq 0 ]
-  run sudo -u postgres psql -l
+  run sudo -E -u postgres psql -l
   echo "$output" | grep -q "testdb"
   [ "$?" -eq 0 ]
   echo "$output" | grep -q "testuser"

@@ -52,12 +52,10 @@ function apply_socket_config() {
   
   # Configure postgresql.conf for socket-only access
   # First, uncomment any existing listen_addresses line and set to empty
-  sudo sed -i 's/^#listen_addresses.*/listen_addresses = '\'''\''/' /etc/postgresql/$PG_VERSION/main/postgresql.conf
-  sudo sed -i 's/^listen_addresses.*/listen_addresses = '\'''\''/' /etc/postgresql/$PG_VERSION/main/postgresql.conf
+  sudo sed -i -E "s/^[[:space:]]*#?[[:space:]]*listen_addresses[[:space:]]*=.*/listen_addresses = ''/" /etc/postgresql/$PG_VERSION/main/postgresql.conf
   
   # Ensure unix_socket_directories is set
-  sudo sed -i 's/^#unix_socket_directories.*/unix_socket_directories = '\''\/var\/run\/postgresql'\''/' /etc/postgresql/$PG_VERSION/main/postgresql.conf
-  sudo sed -i 's/^unix_socket_directories.*/unix_socket_directories = '\''\/var\/run\/postgresql'\''/' /etc/postgresql/$PG_VERSION/main/postgresql.conf
+  sudo sed -i -E "s/^[[:space:]]*#?[[:space:]]*unix_socket_directories[[:space:]]*=.*/unix_socket_directories = '\/var\/run\/postgresql'/" /etc/postgresql/$PG_VERSION/main/postgresql.conf
   
   # Add socket permissions if not present
   if ! sudo grep -q "unix_socket_permissions" /etc/postgresql/$PG_VERSION/main/postgresql.conf; then
