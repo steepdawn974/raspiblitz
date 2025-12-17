@@ -1,5 +1,16 @@
 #!/usr/bin/env bats
 
+setup() {
+  # Create minimal bitcoin.conf for test environment (CI/CD doesn't have full RaspiBlitz)
+  sudo mkdir -p /mnt/hdd/app-data/bitcoin
+  if [ ! -f "/mnt/hdd/app-data/bitcoin/bitcoin.conf" ]; then
+    echo "rpcuser=testrpc" | sudo tee /mnt/hdd/app-data/bitcoin/bitcoin.conf >/dev/null
+    echo "rpcpassword=testrpcpassword123" | sudo tee -a /mnt/hdd/app-data/bitcoin/bitcoin.conf >/dev/null
+  fi
+  # Set global PostgreSQL socket connection
+  export PGHOST=/var/run/postgresql
+}
+
 @test "Start PostgreSQL cluster" {
   # run the script
   run ../home.admin/config.scripts/bonus.postgresql.sh on
