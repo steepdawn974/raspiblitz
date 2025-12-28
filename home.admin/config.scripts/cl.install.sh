@@ -69,12 +69,14 @@ function installDependencies() {
   # Install uv for Python dependency management (replaces poetry in CLN 25.x+)
   echo "# Installing uv for Python dependency management"
   if ! command -v uv &>/dev/null; then
-    sudo RUSTUP_HOME=/opt/rust CARGO_HOME=/opt/rust /opt/rust/bin/cargo install --locked --root /usr/local uv || exit 1
+    sudo RUSTUP_HOME=/opt/rust CARGO_HOME=/opt/rust cargo install --locked uv || exit 1
+    # Ensure uv is symlinked into /usr/local/bin
+    sudo ln -sf /opt/rust/bin/uv /usr/local/bin/uv
   fi
 
   # Sync Python dependencies with uv
   cd /home/bitcoin/lightning || exit 1
-  sudo -u bitcoin uv sync --all-extras --all-groups --frozen
+  sudo -u bitcoin RUSTUP_HOME=/opt/rust CARGO_HOME=/opt/rust uv sync --all-extras --all-groups --frozen
 
   sudo apt-get install -y protobuf-compiler
 
