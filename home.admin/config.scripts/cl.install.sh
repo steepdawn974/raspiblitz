@@ -56,6 +56,9 @@ function installDependencies() {
   sudo usermod -a -G rust bitcoin
   echo "# Set the default Rust toolchain"
   sudo RUSTUP_HOME=/opt/rust CARGO_HOME=/opt/rust /opt/rust/bin/rustup default stable
+  # Ensure permissions are correct after rustup operations
+  sudo chown -R root:rust /opt/rust
+  sudo chmod -R g+w /opt/rust
   echo "# Make Rust binaries available system-wide"
   sudo ln -sf /opt/rust/bin/* /usr/local/bin/
   echo "# Set up system-wide environment variables for Rust"
@@ -88,6 +91,11 @@ function installDependencies() {
 
 function buildAndInstallCLbinaries() {
   cd /home/bitcoin/lightning || exit 1
+
+  # Ensure /opt/rust has correct permissions before building
+  echo "# Ensuring /opt/rust permissions for rust group"
+  sudo chown -R root:rust /opt/rust
+  sudo chmod -R g+w /opt/rust
 
   echo
   echo "########## configure"
