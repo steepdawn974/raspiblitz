@@ -85,6 +85,18 @@ function install() {
 
 if [ "$1" = "on" ]; then
 
+  # warn interactively - skip in automated/scripted calls
+  if [ "${norestart}" != "1" ]; then
+    echo
+    echo "# WARNING: feeadjuster will immediately recalculate and overwrite"
+    echo "# the fees on ALL your channels upon startup based on current balances."
+    echo "# Any manually set fees will be replaced."
+    echo "# Make sure feeadjuster-* options are configured in cl.conf first."
+    echo
+    echo "# Press ENTER to continue or CTRL+C to abort."
+    read -r _
+  fi
+
   install
 
   if [ ! -L "/home/bitcoin/${netprefix}cl-plugins-enabled/${plugin}.py" ]; then
