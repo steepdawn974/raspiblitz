@@ -390,9 +390,7 @@ if [ "$1" = "menu" ]; then
         SUMMARY+="Boltz fee:    ~${FEE_SWAP} sats (${FEE_PERCENT}%)\n"
         SUMMARY+="Miner fee:    ~${FEE_MINER} sats\n"
         SUMMARY+="Receive:      ~${RECEIVE_AMOUNT} sats\n\n"
-        SUMMARY+">>> Press YES to CREATE the swap <<<
-"
-        SUMMARY+">>> Press NO to CANCEL <<<"
+        SUMMARY+=">>> Press YES to CREATE the swap <<<\n>>> Press NO to CANCEL <<<"
 
         whiptail --title " Boltz Submarine [3/3] - Confirm " \
           --yesno "${SUMMARY}" 18 70 \
