@@ -67,16 +67,24 @@ if [ "$1" = "on" ]; then
   # set flag in raspiblitz config (idempotent)
   /home/admin/config.scripts/blitz.conf.sh set ${netprefix}clnntfy "on"
 
-  # set default CLN config options if not present yet
-  # ntfy-url is required; only set the optional defaults so the user can fill
-  # in their server/topic/auth in the CLN config or via the menu later.
+  # set default CLN config options if not present yet.
+  # SAFE DEFAULTS: the plugin starts but publishes NOTHING until the user
+  # explicitly opts in by changing ntfy-events. A random topic is generated so
+  # that even when events are later enabled on the public ntfy.sh, the topic
+  # is unguessable and the user's notifications stay private.
+  if ! grep -q "^ntfy-url=" "${CLCONF}"; then
+    echo "# setting ntfy-url=https://ntfy.sh (public server; change to self-hosted if desired)"
+    sudo /home/admin/config.scripts/blitz.conf.sh set "ntfy-url" "https://ntfy.sh" "${CLCONF}" "noquotes"
+  fi
   if ! grep -q "^ntfy-topic=" "${CLCONF}"; then
-    echo "# setting ntfy-topic=cln-alerts"
-    sudo /home/admin/config.scripts/blitz.conf.sh set "ntfy-topic" "cln-alerts" "${CLCONF}" "noquotes"
+    random_suffix=$(head -c 8 /dev/urandom | xxd -p)
+    topic="cln-${random_suffix}"
+    echo "# setting ntfy-topic=${topic} (random, private)"
+    sudo /home/admin/config.scripts/blitz.conf.sh set "ntfy-topic" "${topic}" "${CLCONF}" "noquotes"
   fi
   if ! grep -q "^ntfy-events=" "${CLCONF}"; then
-    echo "# setting ntfy-events=all"
-    sudo /home/admin/config.scripts/blitz.conf.sh set "ntfy-events" "all" "${CLCONF}" "noquotes"
+    echo "# setting ntfy-events=none (nothing published until you opt in)"
+    sudo /home/admin/config.scripts/blitz.conf.sh set "ntfy-events" "none" "${CLCONF}" "noquotes"
   fi
 
   # restart service to apply updated CLCONF and load plugin (if system is ready)
@@ -89,12 +97,17 @@ if [ "$1" = "on" ]; then
   # Display next steps
   echo ""
   echo "#####################################################################################################"
-  echo "# cln-ntfy forwards CLN notifications to an ntfy server."
+  echo "# cln-ntfy is installed but INERT (ntfy-events=none)."
+  echo "# Nothing is published until you enable events in ${CLCONF}."
   echo "# https://github.com/yukibtc/cln-ntfy#options"
   echo ""
-  echo "# REQUIRED: set your ntfy server URL in ${CLCONF}:"
-  echo "#   ntfy-url=https://ntfy.sh"
+  echo "# Defaults already set: ntfy-url, ntfy-topic (random), ntfy-events=none"
   echo ""
+  echo "# TO ENABLE NOTIFICATIONS, edit ${CLCONF} and set:"
+  echo "#   ntfy-events=all   # or a subset: invoice_payment,channel_opened"
+  echo ""
+  echo "# OPTIONAL (self-hosted server):"
+  echo "#   ntfy-url=https://ntfy.example.com"
   echo "# OPTIONAL (basic auth):"
   echo "#   ntfy-username=alice"
   echo "#   ntfy-password=secret"
@@ -102,8 +115,6 @@ if [ "$1" = "on" ]; then
   echo "#   ntfy-token=tk_abc123..."
   echo "# OPTIONAL (for .onion servers):"
   echo "#   ntfy-proxy=socks5h://127.0.0.1:9050"
-  echo "# OPTIONAL (restrict events):"
-  echo "#   ntfy-events=invoice_payment,channel_opened   # or 'all'"
   echo ""
   echo "# After editing ${CLCONF} restart CLN:"
   echo "#   sudo systemctl restart ${netprefix}lightningd"
