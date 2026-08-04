@@ -90,6 +90,19 @@ if [ "$1" = "on" ]; then
     sudo /home/admin/config.scripts/blitz.conf.sh set "ntfy-events" "none" "${CLCONF}" "noquotes"
   fi
 
+  # copy the sample template file next to the CLN config (idempotent)
+  template_src="${plugindir}/ntfy-template.sample.conf"
+  template_dst="/home/bitcoin/.lightning/ntfy-template.conf"
+  if [ -f "${template_src}" ] && [ ! -f "${template_dst}" ]; then
+    echo "# copying sample template to ${template_dst}"
+    sudo cp "${template_src}" "${template_dst}"
+    sudo chown bitcoin:bitcoin "${template_dst}"
+  fi
+  if ! grep -q "^ntfy-template-file=" "${CLCONF}" && [ -f "${template_dst}" ]; then
+    echo "# setting ntfy-template-file=${template_dst}"
+    sudo /home/admin/config.scripts/blitz.conf.sh set "ntfy-template-file" "${template_dst}" "${CLCONF}" "noquotes"
+  fi
+
   # restart service to apply updated CLCONF and load plugin (if system is ready)
   source <(/home/admin/_cache.sh get state)
   if [ "${state}" = "ready" ] && [ "$3" != "norestart" ]; then
@@ -118,6 +131,9 @@ if [ "$1" = "on" ]; then
   echo "#   ntfy-token=tk_abc123..."
   echo "# OPTIONAL (for .onion servers):"
   echo "#   ntfy-proxy=socks5h://127.0.0.1:9050"
+  echo "# OPTIONAL (custom message templates):"
+  echo "#   A sample template was copied to /home/bitcoin/.lightning/ntfy-template.conf"
+  echo "#   Edit it to customize titles/messages, or remove ntfy-template-file to use defaults."
   echo ""
   echo "# After editing ${CLCONF} restart CLN:"
   echo "#   sudo systemctl restart ${netprefix}lightningd"
