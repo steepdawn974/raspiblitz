@@ -21,7 +21,9 @@ plugindir="/home/bitcoin/cl-plugins-available/${plugin}"
 pluginbin="${plugindir}/target/release/${plugin}"
 enabled_dir="/home/bitcoin/${netprefix}cl-plugins-enabled"
 symlink_target="${enabled_dir}/${plugin}"
-repo_url="https://github.com/yukibtc/cln-ntfy.git"
+# TODO: switch back to upstream yukibtc/cln-ntfy once the v0.2 refactor is merged
+repo_url="https://github.com/steepdawn974/cln-ntfy.git"
+repo_branch="refactor-v0.2"
 
 # ensure enabled directory exists (idempotent)
 if [ ! -d "${enabled_dir}" ]; then
@@ -33,12 +35,13 @@ install_build() {
   if [ ! -d "${plugindir}/.git" ]; then
     sudo -u bitcoin mkdir -p "/home/bitcoin/cl-plugins-available"
     cd /home/bitcoin/cl-plugins-available || exit 1
-    sudo -u bitcoin git clone "${repo_url}" "${plugin}" || exit 1
+    sudo -u bitcoin git clone --branch "${repo_branch}" "${repo_url}" "${plugin}" || exit 1
   else
     # update repo if it exists
     cd "${plugindir}" || exit 1
     sudo -u bitcoin git fetch --all
-    sudo -u bitcoin git pull --ff-only || true
+    sudo -u bitcoin git checkout "${repo_branch}" || true
+    sudo -u bitcoin git pull --ff-only origin "${repo_branch}" || true
   fi
 
   # build release binary (idempotent) using system-wide Rust (/opt/rust)
