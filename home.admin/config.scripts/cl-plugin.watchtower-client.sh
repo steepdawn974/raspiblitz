@@ -49,10 +49,6 @@ fi
 
 if [ "$1" = "on" ]; then
 
-  # rust for rust-teos, includes rustfmt
-  sudo -u bitcoin curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
-    sudo -u bitcoin sh -s -- -y
-
   #Cleanup existing
   if [ -d "/home/bitcoin/cl-plugins-available/plugins/${plugin}/" ]; then
     sudo rm -rf "/home/bitcoin/cl-plugins-available/plugins/${plugin}/"
@@ -69,9 +65,9 @@ if [ "$1" = "on" ]; then
   #Install additional dependencies
   sudo apt-get install -y ${pkg_dependencies} >/dev/null
 
-  #Compile
+  #Compile using system-wide Rust (/opt/rust) installed by cl.install.sh
   cd /home/bitcoin/cl-plugins-available/rust-teos || exit 1
-  sudo -u bitcoin /home/bitcoin/.cargo/bin/cargo install --locked --path watchtower-plugin \
+  sudo -u bitcoin RUSTUP_HOME=/opt/rust CARGO_HOME=/opt/rust cargo install --locked --path watchtower-plugin \
     --target-dir /home/bitcoin/cl-plugins-available/${plugin} || exit 1
 
   #Symlink to enable

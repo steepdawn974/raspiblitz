@@ -16,17 +16,14 @@ if [ $($lightningcli_alias | grep -c "summars") -eq 0 ]; then
   echo "# Starting the summars plugin"
 
   if [ ! -f /home/bitcoin/cl-plugins-available/summars/target/release/summars ]; then
-    if [ ! -f /home/bitcoin/.cargo/bin/cargo ]; then
-      # get Rust
-      sudo -u bitcoin curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sudo -u bitcoin sh -s -- -y
-    fi
     if [ ! -d "/home/bitcoin/cl-plugins-available/summars" ]; then
       sudo -u bitcoin mkdir /home/bitcoin/cl-plugins-available 2>/dev/null
       cd /home/bitcoin/cl-plugins-available || exit 1
       sudo -u bitcoin git clone https://github.com/daywalker90/summars.git
     fi
     cd /home/bitcoin/cl-plugins-available/summars || exit 1
-    sudo -u bitcoin /home/bitcoin/.cargo/bin/cargo build --release
+    # build using system-wide Rust (/opt/rust) installed by cl.install.sh
+    sudo -u bitcoin RUSTUP_HOME=/opt/rust CARGO_HOME=/opt/rust cargo build --release
   fi
 
   $lightningcli_alias plugin start -H /home/bitcoin/cl-plugins-available/summars/target/release/summars 1>/dev/null
