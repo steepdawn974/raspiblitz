@@ -105,6 +105,7 @@ install_binary() {
   local tmpdir
   tmpdir=$(mktemp -d)
 
+  chown bitcoin:bitcoin "${tmpdir}"
   echo "# Downloading ${asset} ..."
   if ! sudo -u bitcoin wget -O "${tmpdir}/${asset}" "${url}"; then
     echo "# ERROR: download failed for ${url}"
