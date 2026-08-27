@@ -6,6 +6,10 @@ if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "-help" ]; then
  echo "blitz.notify.sh on"
  echo "blitz.notify.sh off"
  echo "blitz.notify.sh send \"Message to be send via configured method\""
+ echo ""
+ echo "The message can be a plain string or a JSON object with fields:"
+ echo "  {\"title\":\"...\", \"priority\":\"urgent|high|default\", \"tags\":\"...\", \"message\":\"...\"}"
+ echo "JSON is used by ntfy; other methods receive the message field or the plain string."
  exit 1
 fi
 
@@ -49,6 +53,15 @@ if ! grep -Eq "^notifyMailToCert=.*" /mnt/hdd/app-data/raspiblitz.conf; then
 fi
 if ! grep -Eq "^notifyExtCmd=.*" /mnt/hdd/app-data/raspiblitz.conf; then
     /home/admin/config.scripts/blitz.conf.sh set notifyExtCmd "/usr/bin/printf"
+fi
+if ! grep -Eq "^notifyNtfyUrl=.*" /mnt/hdd/app-data/raspiblitz.conf; then
+    /home/admin/config.scripts/blitz.conf.sh set notifyNtfyUrl "https://ntfy.example.com"
+fi
+if ! grep -Eq "^notifyNtfyTopic=.*" /mnt/hdd/app-data/raspiblitz.conf; then
+    /home/admin/config.scripts/blitz.conf.sh set notifyNtfyTopic "raspiblitz"
+fi
+if ! grep -Eq "^notifyNtfyToken=.*" /mnt/hdd/app-data/raspiblitz.conf; then
+    /home/admin/config.scripts/blitz.conf.sh set notifyNtfyToken ""
 fi
 
 # reload settings
@@ -120,22 +133,61 @@ if [ "$1" = "send" ]; then
     exit 1
   fi
 
-  if ! command -v msmtp >/dev/null; then
-    echo "please run \"on\" first"
-    exit 1
+  rawMessage="$2"
+
+  # parse JSON message if valid, else treat as plain string
+  # JSON format: {"title":"...", "priority":"urgent|high|default", "tags":"...", "message":"..."}
+  msgTitle=""
+  msgPriority=""
+  msgTags=""
+  msgBody="${rawMessage}"
+  if echo "${rawMessage}" | jq -e '.message' >/dev/null 2>&1; then
+    msgTitle=$(echo "${rawMessage}" | jq -r '.title // ""')
+    msgPriority=$(echo "${rawMessage}" | jq -r '.priority // ""')
+    msgTags=$(echo "${rawMessage}" | jq -r '.tags // ""')
+    msgBody=$(echo "${rawMessage}" | jq -r '.message')
   fi
 
   # now parse settings from config and use to send the message
   if [ "${notifyMethod}" = "ext" ]; then
-    /usr/bin/python3 /home/admin/config.scripts/blitz.sendnotification.py ext ${notifyExtCmd} "$2"
+    /usr/bin/python3 /home/admin/config.scripts/blitz.sendnotification.py ext ${notifyExtCmd} "${msgBody}"
   elif [ "${notifyMethod}" = "mail" ]; then
+    if ! command -v msmtp >/dev/null; then
+      echo "please run \"on\" first"
+      exit 1
+    fi
     if [ "${notifyMailEncrypt}" = "on" ]; then
-      /usr/bin/python3 /home/admin/config.scripts/blitz.sendnotification.py mail --from-address "${notifyMailFromAddress}" --from-name "${notifyMailFromName}" --cert "${notifyMailToCert}" --encrypt ${notifyMailTo} "${@:3}" "$2"
+      /usr/bin/python3 /home/admin/config.scripts/blitz.sendnotification.py mail --from-address "${notifyMailFromAddress}" --from-name "${notifyMailFromName}" --cert "${notifyMailToCert}" --encrypt ${notifyMailTo} "${@:3}" "${msgBody}"
     else
-      /usr/bin/python3 /home/admin/config.scripts/blitz.sendnotification.py mail --from-address "${notifyMailFromAddress}" --from-name "${notifyMailFromName}" "${notifyMailTo}" "${@:3}" "$2"
+      /usr/bin/python3 /home/admin/config.scripts/blitz.sendnotification.py mail --from-address "${notifyMailFromAddress}" --from-name "${notifyMailFromName}" "${notifyMailTo}" "${@:3}" "${msgBody}"
+    fi
+  elif [ "${notifyMethod}" = "ntfy" ]; then
+    if [ -z "${notifyNtfyUrl}" ] || [ -z "${notifyNtfyTopic}" ]; then
+      echo "error='notifyNtfyUrl/notifyNtfyTopic not set in raspiblitz.conf'"
+      exit 1
+    fi
+    ntfyEndpoint="${notifyNtfyUrl}/${notifyNtfyTopic}"
+    ntfyHeaders=()
+    if [ -n "${msgTitle}" ]; then
+      ntfyHeaders+=(-H "Title: ${msgTitle}")
+    fi
+    if [ -n "${msgTags}" ]; then
+      ntfyHeaders+=(-H "Tags: ${msgTags}")
+    fi
+    if [ -n "${notifyNtfyToken}" ]; then
+      ntfyHeaders+=(-H "Authorization: Bearer ${notifyNtfyToken}")
+    fi
+    case "${msgPriority}" in
+      urgent) ntfyHeaders+=(-H "Priority: urgent") ;;
+      high)   ntfyHeaders+=(-H "Priority: high") ;;
+      *)      ;;
+    esac
+    if ! curl -sS --connect-timeout 10 --max-time 30 -X POST "${ntfyEndpoint}" "${ntfyHeaders[@]}" -d "${msgBody}" >/dev/null 2>&1; then
+      echo "error='failed to send ntfy notification to ${ntfyEndpoint}'"
+      exit 1
     fi
   elif [ "${notifyMethod}" = "slack" ]; then
-    /usr/bin/python3 /home/admin/config.scripts/blitz.sendnotification.py slack -h "$2"
+    /usr/bin/python3 /home/admin/config.scripts/blitz.sendnotification.py slack -h "${msgBody}"
   else
     echo "unknown notification method - check /mnt/hdd/app-data/raspiblitz.conf"
   fi
