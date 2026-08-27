@@ -60,12 +60,27 @@ if [ "$1" = "on" ] || [ "$1" = "off" ]; then
       *) echo "error='invalid interval: $interval (use 5min|10min|15min|30min|1h)'" && exit 1 ;;
     esac
 
-    # set up notifications via blitz.notify.sh (writes ntfy defaults to raspiblitz.conf)
+    # set up notifications via blitz.notify.sh
     echo "# Setting up notifications"
     if [ -x /home/admin/config.scripts/blitz.notify.sh ]; then
       /home/admin/config.scripts/blitz.notify.sh on
       # set method to ntfy for security alerts
       /home/admin/config.scripts/blitz.conf.sh set notifyMethod ntfy
+      # migrate ntfy config from CLN config to raspiblitz.conf (if present there)
+      local clNtfyUrl clNtfyTopic clNtfyToken
+      clNtfyUrl=$(grep '^ntfy-url=' "${CLCONF}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+      clNtfyTopic=$(grep '^ntfy-topic=' "${CLCONF}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+      clNtfyToken=$(grep '^ntfy-token=' "${CLCONF}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+      if [ -n "${clNtfyUrl}" ] && [ -n "${clNtfyTopic}" ]; then
+        echo "# Migrating ntfy config from CLN config to raspiblitz.conf"
+        /home/admin/config.scripts/blitz.conf.sh set notifyNtfyUrl "${clNtfyUrl}"
+        /home/admin/config.scripts/blitz.conf.sh set notifyNtfyTopic "${clNtfyTopic}"
+        if [ -n "${clNtfyToken}" ]; then
+          /home/admin/config.scripts/blitz.conf.sh set notifyNtfyToken "${clNtfyToken}"
+        fi
+      else
+        echo "# WARNING: no ntfy config found in CLN config — set notifyNtfyUrl/Topic in raspiblitz.conf manually"
+      fi
     else
       echo "# WARNING: blitz.notify.sh not found — alerts will be log-only"
     fi
