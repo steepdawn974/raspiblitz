@@ -495,7 +495,7 @@ always-use-proxy=true
   # sudo logrotate --debug /etc/logrotate.d/lightningd
   echo
   sudo -u admin touch /home/admin/_aliases
-  if ! grep -Eq "^alias ${netprefix}lightning-cli" /home/admin/_aliases; then
+  if ! grep -Eq "^alias ${netprefix}cl=" /home/admin/_aliases; then
     echo "# Adding aliases: ${netprefix}cl, ${netprefix}cllog, ${netprefix}clconf"
     echo "\
 alias ${netprefix}cl=\"sudo -u bitcoin /usr/local/bin/lightning-cli\
@@ -596,8 +596,9 @@ if [ "$1" = "off" ]; then
   sudo systemctl disable ${netprefix}lightningd
   sudo systemctl stop ${netprefix}lightningd
   echo "# Removing the aliases"
-  sudo sed -i "/${netprefix}lightning-cli/d" /home/admin/_aliases
-  sudo sed -i "/${netprefix}cl/d" /home/admin/_aliases
+  sudo sed -i "/^alias ${netprefix}cl=/d" /home/admin/_aliases
+  sudo sed -i "/^alias ${netprefix}cllog=/d" /home/admin/_aliases
+  sudo sed -i "/^alias ${netprefix}clconf=/d" /home/admin/_aliases
   if [ "$(echo "$@" | grep -c purge)" -gt 0 ]; then
     echo "# Removing the binaries"
     sudo rm -f /usr/local/bin/lightningd
