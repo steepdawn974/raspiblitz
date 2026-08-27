@@ -60,6 +60,16 @@ if [ "$1" = "on" ] || [ "$1" = "off" ]; then
       *) echo "error='invalid interval: $interval (use 5min|10min|15min|30min|1h)'" && exit 1 ;;
     esac
 
+    # set up notifications via blitz.notify.sh (writes ntfy defaults to raspiblitz.conf)
+    echo "# Setting up notifications"
+    if [ -x /home/admin/config.scripts/blitz.notify.sh ]; then
+      /home/admin/config.scripts/blitz.notify.sh on
+      # set method to ntfy for security alerts
+      /home/admin/config.scripts/blitz.conf.sh set notifyMethod ntfy
+    else
+      echo "# WARNING: blitz.notify.sh not found — alerts will be log-only"
+    fi
+
     echo "# Creating /etc/systemd/system/${SERVICE_NAME}.service"
     echo "
 [Unit]
@@ -155,17 +165,38 @@ FORWARDS_FILE="${STATE_DIR}/forwards.json"
 LOG_FILE="${STATE_DIR}/monitor.log"
 mkdir -p "${STATE_DIR}"
 
-# --- ntfy config (read from CLN config) ---
-NTFY_URL=$(grep '^ntfy-url=' "${CLCONF}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-NTFY_TOPIC=$(grep '^ntfy-topic=' "${CLCONF}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
-NTFY_TOKEN=$(grep '^ntfy-token=' "${CLCONF}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+# --- notification config (optional) ---
+# Cascade: raspiblitz.conf → NTFY_* env vars → ntfy-* from CLN config
+# If none configured, alerts are log-only.
+source /mnt/hdd/app-data/raspiblitz.conf 2>/dev/null
 
-if [ -z "${NTFY_URL}" ] || [ -z "${NTFY_TOPIC}" ]; then
-  echo "error='ntfy-url/ntfy-topic not found in CLN config — cannot send alerts'"
-  exit 1
+# 1. raspiblitz.conf (written by blitz.notify.sh on)
+NTFY_URL="${notifyNtfyUrl:-}"
+NTFY_TOPIC="${notifyNtfyTopic:-}"
+NTFY_TOKEN="${notifyNtfyToken:-}"
+
+# 2. NTFY_* env vars (override for testing or custom setups)
+: "${NTFY_URL:=${NTFY_URL_ENV:-}}"
+: "${NTFY_TOPIC:=${NTFY_TOPIC_ENV:-}}"
+: "${NTFY_TOKEN:=${NTFY_TOKEN_ENV:-}}"
+
+# 3. ntfy-* from CLN config (e.g. set by cl-plugin.clnntfy.sh)
+if [ -z "${NTFY_URL}" ]; then
+  NTFY_URL=$(grep '^ntfy-url=' "${CLCONF}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+fi
+if [ -z "${NTFY_TOPIC}" ]; then
+  NTFY_TOPIC=$(grep '^ntfy-topic=' "${CLCONF}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+fi
+if [ -z "${NTFY_TOKEN}" ]; then
+  NTFY_TOKEN=$(grep '^ntfy-token=' "${CLCONF}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
 fi
 
-NTFY_ENDPOINT="${NTFY_URL}/${NTFY_TOPIC}"
+# Determine if notifications are available
+NOTIFY_SCRIPT="/home/admin/config.scripts/blitz.notify.sh"
+NOTIFY_ENABLED=false
+if [ -n "${NTFY_URL}" ] && [ -n "${NTFY_TOPIC}" ] && [ "${NTFY_URL}" != "https://ntfy.example.com" ]; then
+  NOTIFY_ENABLED=true
+fi
 
 # --- helpers ---
 timestamp() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
@@ -178,19 +209,42 @@ log() {
 send_alert() {
   # $1 = priority (urgent | high | default), $2 = title, $3 = message
   local priority="$1" title="$2" message="$3"
-  local headers=(-H "Title: ${title}" -H "Tags: warning,cln")
-  if [ -n "${NTFY_TOKEN}" ]; then
-    headers+=(-H "Authorization: Bearer ${NTFY_TOKEN}")
+  # If notifications are not configured, log the alert only
+  if [ "${NOTIFY_ENABLED}" != "true" ]; then
+    log "ALERT (log-only) [${priority}] ${title}: ${message}"
+    return 0
   fi
-  case "${priority}" in
-    urgent) headers+=(-H "Priority: urgent") ;;
-    high)   headers+=(-H "Priority: high") ;;
-    *)      ;;
-  esac
-  if curl -sS --connect-timeout 10 --max-time 30 -X POST "${NTFY_ENDPOINT}" "${headers[@]}" -d "${message}" >/dev/null 2>&1; then
-    log "ALERT SENT [${priority}] ${title}: ${message}"
+  # Send via blitz.notify.sh with JSON message if available, else inline curl
+  if [ -x "${NOTIFY_SCRIPT}" ] && grep -Eq "^notify=on" /mnt/hdd/app-data/raspiblitz.conf 2>/dev/null; then
+    local jsonMsg
+    jsonMsg=$(jq -cn \
+      --arg title "${title}" \
+      --arg priority "${priority}" \
+      --arg tags "warning,cln" \
+      --arg message "${message}" \
+      '{title: $title, priority: $priority, tags: $tags, message: $message}')
+    if "${NOTIFY_SCRIPT}" send "${jsonMsg}" >/dev/null 2>&1; then
+      log "ALERT SENT [${priority}] ${title}: ${message}"
+    else
+      log "ERROR: failed to send alert [${priority}] ${title}: ${message}"
+    fi
   else
-    log "ERROR: failed to send alert [${priority}] ${title}: ${message}"
+    # Fallback: inline curl directly to ntfy
+    local endpoint="${NTFY_URL}/${NTFY_TOPIC}"
+    local headers=(-H "Title: ${title}" -H "Tags: warning,cln")
+    if [ -n "${NTFY_TOKEN}" ]; then
+      headers+=(-H "Authorization: Bearer ${NTFY_TOKEN}")
+    fi
+    case "${priority}" in
+      urgent) headers+=(-H "Priority: urgent") ;;
+      high)   headers+=(-H "Priority: high") ;;
+      *)      ;;
+    esac
+    if curl -sS --connect-timeout 10 --max-time 30 -X POST "${endpoint}" "${headers[@]}" -d "${message}" >/dev/null 2>&1; then
+      log "ALERT SENT [${priority}] ${title}: ${message}"
+    else
+      log "ERROR: failed to send alert [${priority}] ${title}: ${message}"
+    fi
   fi
 }
 
