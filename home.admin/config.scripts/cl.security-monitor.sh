@@ -67,7 +67,6 @@ if [ "$1" = "on" ] || [ "$1" = "off" ]; then
       # set method to ntfy for security alerts
       /home/admin/config.scripts/blitz.conf.sh set notifyMethod ntfy
       # migrate ntfy config from CLN config to raspiblitz.conf (if present there)
-      local clNtfyUrl clNtfyTopic clNtfyToken
       clNtfyUrl=$(grep '^ntfy-url=' "${CLCONF}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
       clNtfyTopic=$(grep '^ntfy-topic=' "${CLCONF}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
       clNtfyToken=$(grep '^ntfy-token=' "${CLCONF}" 2>/dev/null | cut -d= -f2- | tr -d ' ')
