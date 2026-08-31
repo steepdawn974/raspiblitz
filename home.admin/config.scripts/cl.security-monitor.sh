@@ -54,9 +54,13 @@ if [ "$1" = "on" ] || [ "$1" = "off" ]; then
   MONITOR_DIR="/home/bitcoin/.lightning/${CLNETWORK}/.security-monitor"
 
   if [ "$action" = "on" ]; then
-    # validate interval
+    # validate interval and map to OnCalendar expression
     case "$interval" in
-      5min|10min|15min|30min|1h) ;;
+      5min)  calendar="*:0/5:00" ;;
+      10min) calendar="*:0/10:00" ;;
+      15min) calendar="*:0/15:00" ;;
+      30min) calendar="*:0/30:00" ;;
+      1h)    calendar="*-*-* *:00:00" ;;
       *) echo "error='invalid interval: $interval (use 5min|10min|15min|30min|1h)'" && exit 1 ;;
     esac
 
@@ -108,8 +112,9 @@ Description=Run CLN security monitor every ${interval}
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=${interval}
+OnCalendar=${calendar}
 Persistent=true
+RandomizedDelaySec=30
 
 [Install]
 WantedBy=timers.target
