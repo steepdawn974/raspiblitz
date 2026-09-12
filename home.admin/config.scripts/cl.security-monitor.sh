@@ -367,6 +367,31 @@ collect_state() {
     | length
   ' 2>/dev/null || echo 0)
 
+  # outbound liquidity: sum of to_us_msat across active channels
+  local total_to_us_msat
+  total_to_us_msat=$(echo "${channels}" | jq '[.channels[] | select(.state == "CHANNELD_NORMAL") | .to_us_msat // 0 | tonumber] | add // 0' 2>/dev/null || echo 0)
+
+  # phantom funding: every channel past the negotiation phase has a funding_txid
+  # that must resolve on-chain or in mempool — a missing tx is the signature of
+  # a fake-channel exploit
+  local phantom_funding_count=0 phantom_funding_details="" funding_rows
+  funding_rows=$(echo "${channels}" | jq -r '
+    [.channels[] | select(.funding_txid != null and .funding_txid != ""
+      and (.state == "CHANNELD_AWAITING_LOCKIN" or .state == "DUALOPEND_AWAITING_LOCKIN"
+        or .state == "CHANNELD_NORMAL" or .state == "CHANNELD_SHUTTING_DOWN"
+        or .state == "CLOSINGD_SIGEXCHANGE" or .state == "CLOSINGD_COMPLETE"
+        or .state == "AWAITING_UNILATERAL" or .state == "FUNDING_SPEND_SEEN"
+        or .state == "ONCHAIN"))]
+    | .[] | [.short_channel_id // "no-scid", .funding_txid, .opener, .state] | @tsv
+  ' 2>/dev/null)
+  while IFS=$'\t' read -r f_scid f_txid f_opener f_state; do
+    [ -z "${f_txid}" ] && continue
+    if ! /usr/local/bin/bitcoin-cli -datadir=/home/bitcoin/.bitcoin getrawtransaction "${f_txid}" >/dev/null 2>&1; then
+      phantom_funding_count=$((phantom_funding_count + 1))
+      phantom_funding_details="${phantom_funding_details}${f_scid}(${f_opener},${f_state}) "
+    fi
+  done <<< "${funding_rows}"
+
   # forwarding in last hour (settled + failed)
   local settled_recent failed_recent
   forwards_recent=$(update_forward_cache) || {
@@ -402,6 +427,9 @@ collect_state() {
     --argjson num_pending "${num_pending:-0}" \
     --argjson num_remote_pending "${num_remote_pending:-0}" \
     --argjson abnormal_channels "${abnormal_channels:-0}" \
+    --argjson total_to_us_msat "${total_to_us_msat:-0}" \
+    --argjson phantom_funding_count "${phantom_funding_count:-0}" \
+    --arg phantom_funding_details "${phantom_funding_details}" \
     --argjson pending_htlc_count "${pending_htlc_count:-0}" \
     --argjson pending_htlc_total_msat "${pending_htlc_total_msat:-0}" \
     --argjson settled_recent "${settled_recent:-0}" \
@@ -422,6 +450,9 @@ collect_state() {
       num_pending: $num_pending,
       num_remote_pending: $num_remote_pending,
       abnormal_channels: $abnormal_channels,
+      total_to_us_msat: $total_to_us_msat,
+      phantom_funding_count: $phantom_funding_count,
+      phantom_funding_details: $phantom_funding_details,
       pending_htlc_count: $pending_htlc_count,
       pending_htlc_total_msat: $pending_htlc_total_msat,
       settled_recent: $settled_recent,
@@ -550,8 +581,8 @@ log "Blockheight: ${c_block} (previous: ${p_block:-unknown})"
 # --- CHECK 8: Pending channels (unexpected inbound) ---
 c_pending=$(get_val "${CURRENT}" '.num_remote_pending // 0')
 b_pending=$(get_val "${BASELINE}" '.num_remote_pending // 0')
-if [ "${c_pending}" -gt "${b_pending}" ] && [ "${c_pending}" -gt 2 ]; then
-  send_alert high "CLN: New remote pending channels" "${c_pending} remotely opened pending channels (was ${b_pending}). Verify these are legitimate."
+if [ "${c_pending}" -gt "${b_pending}" ]; then
+  send_alert high "CLN: New remote pending channel(s)" "${c_pending} remotely opened pending channel(s) (was ${b_pending}). A single unexpected inbound open can be an exploit attempt — verify it is legitimate."
   ALERTS=$((ALERTS + 1))
 fi
 log "Remote pending channels: ${c_pending} (baseline: ${b_pending})"
@@ -564,6 +595,45 @@ if [ "${c_inactive}" -gt 0 ] && [ "${c_inactive}" -gt "${b_inactive}" ]; then
   ALERTS=$((ALERTS + 1))
 fi
 log "Inactive channels: ${c_inactive} (baseline: ${b_inactive})"
+
+# --- CHECK 10: Phantom channel funding ---
+# Every channel past negotiation must have a funding_txid that exists on-chain
+# or in mempool. A channel whose funding tx cannot be resolved is the signature
+# of a fake-channel exploit (victim believes the channel is real and funds can
+# be drained through it).
+c_phantom=$(get_val "${CURRENT}" '.phantom_funding_count // 0')
+if [ "${c_phantom}" -gt 0 ]; then
+  send_alert urgent "CLN: Phantom channel funding" "${c_phantom} channel(s) have a funding_txid missing from blockchain and mempool: $(get_val "${CURRENT}" '.phantom_funding_details'). Possible fake-channel exploit — investigate immediately."
+  ALERTS=$((ALERTS + 1))
+fi
+log "Phantom funding: ${c_phantom}"
+
+# --- CHECK 11: Outbound liquidity drain ---
+# A fast collapse of to_us_msat across active channels indicates funds being
+# drained (e.g. through a malicious channel). Check vs previous run (fast drain)
+# and vs baseline (slower cumulative drain).
+c_tous=$(get_val "${CURRENT}" '.total_to_us_msat // 0')
+b_tous=$(get_val "${BASELINE}" '.total_to_us_msat // 0')
+p_tous=0
+if [ -n "${PREVIOUS}" ]; then
+  p_tous=$(get_val "${PREVIOUS}" '.total_to_us_msat // 0')
+fi
+drain_ref="" drain_ref_val=0
+if [ "${p_tous:-0}" -gt 0 ] && [ "${p_tous}" -gt "${c_tous}" ]; then
+  if [ $(( (p_tous - c_tous) * 100 / p_tous )) -ge 30 ] && [ $((p_tous - c_tous)) -ge 1000000000 ]; then
+    drain_ref="previous run"; drain_ref_val=${p_tous}
+  fi
+fi
+if [ -z "${drain_ref}" ] && [ "${b_tous:-0}" -gt 0 ] && [ "${b_tous}" -gt "${c_tous}" ]; then
+  if [ $(( (b_tous - c_tous) * 100 / b_tous )) -ge 50 ] && [ $((b_tous - c_tous)) -ge 1000000000 ]; then
+    drain_ref="baseline"; drain_ref_val=${b_tous}
+  fi
+fi
+if [ -n "${drain_ref}" ]; then
+  send_alert urgent "CLN: Outbound liquidity drain" "to_us_msat across active channels dropped to $((c_tous / 1000)) sats (was $((drain_ref_val / 1000)) sats at ${drain_ref}). Possible liquidity drain — investigate."
+  ALERTS=$((ALERTS + 1))
+fi
+log "Outbound liquidity: $((c_tous / 1000)) sats (baseline: $((b_tous / 1000)) sats, previous: $((p_tous / 1000)) sats)"
 
 # --- summary ---
 c_active=$(get_val "${CURRENT}" '.num_active')
