@@ -356,7 +356,10 @@ collect_state() {
   # channel stats
   local num_active num_inactive num_pending num_remote_pending
   num_active=$(echo "${getinfo}" | jq -r '.num_active_channels')
-  num_inactive=$(echo "${getinfo}" | jq -r '.num_inactive_channels')
+  # inactive = live-state channel whose peer disconnected. Closing-path and
+  # settled tombstones (ONCHAIN, CLOSINGD_*, etc.) linger in listpeerchannels
+  # and are not disconnects — getinfo counts them, so compute it ourselves.
+  num_inactive=$(echo "${channels}" | jq '[.channels[] | select(.peer_connected == false and (.state == "CHANNELD_NORMAL" or .state == "CHANNELD_SHUTTING_DOWN" or .state == "CHANNELD_AWAITING_LOCKIN" or .state == "CHANNELD_AWAITING_SPLICE" or .state == "OPENINGD" or (.state | startswith("DUALOPEND"))))] | length' 2>/dev/null || echo 0)
   num_pending=$(echo "${getinfo}" | jq -r '.num_pending_channels')
   num_remote_pending=$(echo "${channels}" | jq '[.channels[] | select(.opener == "remote" and (.state == "OPENINGD" or .state == "CHANNELD_AWAITING_LOCKIN" or .state == "DUALOPEND_OPEN_INIT" or .state == "DUALOPEND_AWAITING_LOCKIN" or .state == "DUALOPEND_OPEN_COMMITTED" or .state == "DUALOPEND_OPEN_COMMIT_READY"))] | length')
 
