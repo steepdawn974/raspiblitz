@@ -13,13 +13,6 @@ fi
 # source <(/home/admin/config.scripts/network.aliases.sh getvars cl <mainnet|testnet|signet>)
 source <(/home/admin/config.scripts/network.aliases.sh getvars cl $1)
 
-if [ $(sudo -u bitcoin cat ${CLCONF} | grep -c "^http-pass") -gt 0 ];then
-  if [ ! -f /home/bitcoin/cl-plugins-enabled/c-lightning-http-plugin ]; then
-    echo "# The clHTTPplugin is not present but in config"
-    /home/admin/config.scripts/cl-plugin.http.sh on norestart
-  fi
-fi
-
 # Retained CLN options must not override an explicitly disabled plugin.
 feeadjusterState=$(
   source /mnt/hdd/app-data/raspiblitz.conf || exit 1
