@@ -66,10 +66,16 @@ symlink_target="${enabled_dir}/${plugin}"
 repo_owner="daywalker90"
 repo_name="sling"
 
-# resolve the version to install
+# resolve the version to install and fetch release metadata
+# (release_json is also used for sha256 verification in install_binary)
 if [ -z "${pinnedVersion}" ]; then
-  pinnedVersion=$(curl -s "https://api.github.com/repos/${repo_owner}/${repo_name}/releases/latest" \
-    | grep '"tag_name"' | cut -d '"' -f4)
+  release_api="https://api.github.com/repos/${repo_owner}/${repo_name}/releases/latest"
+else
+  release_api="https://api.github.com/repos/${repo_owner}/${repo_name}/releases/tags/${pinnedVersion}"
+fi
+release_json=$(curl -s "${release_api}")
+if [ -z "${pinnedVersion}" ]; then
+  pinnedVersion=$(echo "${release_json}" | grep '"tag_name"' | cut -d '"' -f4)
   if [ -z "${pinnedVersion}" ]; then
     echo "# ERROR: could not determine latest ${plugin} release"
     exit 1
@@ -106,9 +112,26 @@ install_binary() {
   tmpdir=$(mktemp -d)
 
   chown bitcoin:bitcoin "${tmpdir}"
+  # expected sha256 from the asset digest published in the release metadata
+  local expected
+  expected=$(echo "${release_json}" | jq -r --arg a "${asset}" \
+    '.assets[] | select(.name==$a) | .digest' | sed 's/^sha256://')
+  if [ -z "${expected}" ] || [ "${expected}" = "null" ]; then
+    echo "# ERROR: no sha256 digest for ${asset} in release ${version}"
+    sudo rm -rf "${tmpdir}"
+    exit 1
+  fi
+
   echo "# Downloading ${asset} ..."
   if ! sudo -u bitcoin wget -O "${tmpdir}/${asset}" "${url}"; then
     echo "# ERROR: download failed for ${url}"
+    sudo rm -rf "${tmpdir}"
+    exit 1
+  fi
+
+  echo "# Verifying sha256 checksum ..."
+  if ! echo "${expected}  ${tmpdir}/${asset}" | sha256sum -c -; then
+    echo "# ERROR: checksum mismatch for ${asset} - aborting install"
     sudo rm -rf "${tmpdir}"
     exit 1
   fi
